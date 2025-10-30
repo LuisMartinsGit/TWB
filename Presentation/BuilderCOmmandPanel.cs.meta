@@ -1,0 +1,12 @@
+fileFormatVersion: 2
+guid: 04e8ce302c49f4f4495ac56e8b270f66
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - gatherersHutPrefab: {fileID: 6554416045912144656, guid: 77cc8c0fb01a6b742a8d141e13532cf6, type: 3}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
