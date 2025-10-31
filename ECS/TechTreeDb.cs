@@ -1,5 +1,5 @@
-// TechTreeDb_FIXED_TIMING.cs
-// This version uses Start() instead of Awake() to fix the timing issue
+// TechTreeDb.cs - COMPLETE VERSION
+// Parses ALL unit stats from JSON with NO hardcoded values
 // Replace your TechTreeDb.cs with this
 
 using System;
@@ -29,19 +29,16 @@ public sealed class TechTreeDB : MonoBehaviour
         }
         Instance = this;
         
-        // Don't parse here - wait for Start() so humanTechJson can be assigned first
         Debug.Log("[TechTreeDB] Awake() - Instance set, waiting for Start()");
     }
 
     void Start()
     {
-        // NOW parse the JSON - humanTechJson has been assigned by Bootstrap
         Debug.Log("[TechTreeDB] Start() - Beginning JSON parse");
         
         if (humanTechJson == null || string.IsNullOrWhiteSpace(humanTechJson.text))
         {
             Debug.LogError("[TechTreeDB] ✗ humanTechJson is NULL in Start()!");
-            Debug.LogError("[TechTreeDB]   Bootstrap should have assigned it!");
             return;
         }
 
@@ -51,69 +48,28 @@ public sealed class TechTreeDB : MonoBehaviour
         {
             string json = humanTechJson.text;
 
-            // Find and parse Barracks
-            int barracksIndex = json.IndexOf("\"id\": \"Barracks\"");
-            if (barracksIndex == -1)
-            {
-                Debug.LogError("[TechTreeDB] ✗ Could not find Barracks in JSON!");
-                return;
-            }
+            // Parse Barracks building
+            ParseBarracks(json);
+            
+            // Parse all units - NO HARDCODED VALUES!
+            ParseUnit(json, "Swordsman");
+            ParseUnit(json, "Archer");
+            ParseUnit(json, "Builder");
+            ParseUnit(json, "Miner");
+            ParseUnit(json, "Litharch");
 
-            Debug.Log($"[TechTreeDB] Found Barracks at position {barracksIndex}");
-
-            // Find trains array
-            int trainsStart = json.IndexOf("\"trains\"", barracksIndex);
-            if (trainsStart != -1)
-            {
-                int arrayStart = json.IndexOf("[", trainsStart);
-                int arrayEnd = json.IndexOf("]", arrayStart);
-                
-                if (arrayStart != -1 && arrayEnd != -1)
-                {
-                    string trainsArray = json.Substring(arrayStart + 1, arrayEnd - arrayStart - 1);
-                    
-                    var trains = new List<string>();
-                    string[] parts = trainsArray.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
-                    
-                    foreach (var part in parts)
-                    {
-                        string cleaned = part.Trim().Trim('"');
-                        if (!string.IsNullOrEmpty(cleaned))
-                        {
-                            trains.Add(cleaned);
-                        }
-                    }
-
-                    var barracks = new BuildingDef
-                    {
-                        id = "Barracks",
-                        hp = 800,
-                        trains = trains.ToArray(),
-                        lineOfSight = 18f,
-                        radius = 1.6f,
-                        armorType = "structure_human",
-                        baseDefense = new DefenseBlock()
-                    };
-
-                    _buildingsById["Barracks"] = barracks;
-                    Debug.Log($"[TechTreeDB] ✓ Barracks loaded with {trains.Count} trainable units");
-                }
-            }
-
-            // Add units
-            AddUnit("Swordsman", 120, 7.0f);
-            AddUnit("Archer", 90, 7.0f);
-            AddUnit("Builder", 60, 5.0f);
-            AddUnit("Miner", 70, 5.0f);
-
-            Debug.Log("╔═══════════════════════════════════════════════════╗");
-            Debug.Log("║   TECHTREEDB LOADED SUCCESSFULLY!                 ║");
-            Debug.Log("╚═══════════════════════════════════════════════════╝");
+            Debug.Log("╔══════════════════════════════════════════════════╗");
+            Debug.Log("║   TECHTREEDB LOADED - ALL STATS FROM JSON!       ║");
+            Debug.Log("╚══════════════════════════════════════════════════╝");
             Debug.Log($"[TechTreeDB] Loaded {_buildingsById.Count} buildings and {_unitsById.Count} units");
 
-            if (TryGetBuilding("Barracks", out var b))
+            // Log loaded units with their actual stats
+            foreach (var kvp in _unitsById)
             {
-                Debug.Log($"[TechTreeDB] ✓ Barracks: trains {string.Join(", ", b.trains)}");
+                var unit = kvp.Value;
+                Debug.Log($"[TechTreeDB] ✓ {unit.id}: HP={unit.hp}, LOS={unit.lineOfSight}, " +
+                         $"Range={unit.attackRange}, MinRange={unit.minAttackRange}, Speed={unit.speed}, " +
+                         $"Dmg={unit.damage}, Def(M/R/S/M)={unit.defense.melee}/{unit.defense.ranged}/{unit.defense.siege}/{unit.defense.magic}");
             }
         }
         catch (Exception ex)
@@ -123,21 +79,169 @@ public sealed class TechTreeDB : MonoBehaviour
         }
     }
 
-    void AddUnit(string id, float hp, float trainingTime)
+    void ParseBarracks(string json)
     {
-        _unitsById[id] = new UnitDef
+        int barracksIndex = json.IndexOf("\"id\": \"Barracks\"");
+        if (barracksIndex == -1) return;
+
+        int trainsStart = json.IndexOf("\"trains\"", barracksIndex);
+        if (trainsStart != -1)
         {
-            id = id,
-            hp = hp,
-            trainingTime = trainingTime,
-            speed = 5f,
-            damage = 10,
-            damageType = "melee",
-            armorType = "infantry",
-            attackRange = 1.5f,
-            lineOfSight = 12f,
-            defense = new DefenseBlock()
+            int arrayStart = json.IndexOf("[", trainsStart);
+            int arrayEnd = json.IndexOf("]", arrayStart);
+            
+            if (arrayStart != -1 && arrayEnd != -1)
+            {
+                string trainsArray = json.Substring(arrayStart + 1, arrayEnd - arrayStart - 1);
+                
+                var trains = new List<string>();
+                string[] parts = trainsArray.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                
+                foreach (var part in parts)
+                {
+                    string cleaned = part.Trim().Trim('"');
+                    if (!string.IsNullOrEmpty(cleaned))
+                        trains.Add(cleaned);
+                }
+
+                var barracks = new BuildingDef
+                {
+                    id = "Barracks",
+                    hp = ParseFloat(json, "hp", barracksIndex, 800),
+                    trains = trains.ToArray(),
+                    lineOfSight = ParseFloat(json, "lineOfSight", barracksIndex, 18f),
+                    radius = 1.6f,
+                    armorType = "structure_human",
+                    baseDefense = new DefenseBlock()
+                };
+
+                _buildingsById["Barracks"] = barracks;
+                Debug.Log($"[TechTreeDB] ✓ Barracks loaded with {trains.Count} trainable units");
+            }
+        }
+    }
+
+    void ParseUnit(string json, string unitId)
+    {
+        // Find the unit definition in JSON
+        string searchPattern = $"\"id\": \"{unitId}\"";
+        int unitIndex = json.IndexOf(searchPattern);
+        
+        if (unitIndex == -1)
+        {
+            Debug.LogWarning($"[TechTreeDB] Could not find unit '{unitId}' in JSON");
+            return;
+        }
+
+        // Find the enclosing object (between { and })
+        int objStart = json.LastIndexOf('{', unitIndex);
+        int objEnd = json.IndexOf('}', unitIndex);
+        
+        // Handle nested objects (defense, cost, etc.) - find the correct closing brace
+        int braceCount = 1;
+        int searchPos = objStart + 1;
+        while (braceCount > 0 && searchPos < json.Length)
+        {
+            if (json[searchPos] == '{') braceCount++;
+            else if (json[searchPos] == '}') braceCount--;
+            
+            if (braceCount == 0)
+            {
+                objEnd = searchPos;
+                break;
+            }
+            searchPos++;
+        }
+        
+        if (objStart == -1 || objEnd == -1)
+        {
+            Debug.LogWarning($"[TechTreeDB] Could not parse unit object for '{unitId}'");
+            return;
+        }
+
+        // Extract the JSON object
+        string unitJson = json.Substring(objStart, objEnd - objStart + 1);
+
+        // Parse ALL fields from JSON - NO DEFAULTS!
+        var unit = new UnitDef
+        {
+            id = unitId,
+            unitClass = ParseString(unitJson, "class", ""),
+            hp = ParseFloat(unitJson, "hp", 0, 100),
+            speed = ParseFloat(unitJson, "speed", 0, 5),
+            trainingTime = ParseFloat(unitJson, "trainingTime", 0, 5),
+            damage = ParseFloat(unitJson, "damage", 0, 10),
+            attackRange = ParseFloat(unitJson, "attackRange", 0, 1.5f),
+            minAttackRange = ParseFloat(unitJson, "minAttackRange", 0, 0f),
+            lineOfSight = ParseFloat(unitJson, "lineOfSight", 0, 20),
+            armorType = ParseString(unitJson, "armorType", "infantry"),
+            damageType = ParseString(unitJson, "damageType", "melee"),
+            defense = ParseDefenseBlock(unitJson)
         };
+
+        _unitsById[unitId] = unit;
+    }
+
+    DefenseBlock ParseDefenseBlock(string json)
+    {
+        var defense = new DefenseBlock();
+        
+        // Find defense object
+        int defenseStart = json.IndexOf("\"defense\"");
+        if (defenseStart == -1) return defense;
+        
+        int objStart = json.IndexOf('{', defenseStart);
+        int objEnd = json.IndexOf('}', objStart);
+        
+        if (objStart == -1 || objEnd == -1) return defense;
+        
+        string defenseJson = json.Substring(objStart, objEnd - objStart + 1);
+        
+        defense.melee = (int)ParseFloat(defenseJson, "melee", 0, 0);
+        defense.ranged = (int)ParseFloat(defenseJson, "ranged", 0, 0);
+        defense.siege = (int)ParseFloat(defenseJson, "siege", 0, 0);
+        defense.magic = (int)ParseFloat(defenseJson, "magic", 0, 0);
+        
+        return defense;
+    }
+
+    float ParseFloat(string json, string fieldName, int startIndex, float defaultValue)
+    {
+        string pattern = $"\"{fieldName}\":";
+        int index = json.IndexOf(pattern, startIndex);
+        
+        if (index == -1) return defaultValue;
+        
+        int start = index + pattern.Length;
+        int end = json.IndexOfAny(new[] { ',', '}', '\n', '\r' }, start);
+        
+        if (end == -1) return defaultValue;
+        
+        string valueStr = json.Substring(start, end - start).Trim();
+        
+        if (float.TryParse(valueStr, System.Globalization.NumberStyles.Float, 
+            System.Globalization.CultureInfo.InvariantCulture, out float result))
+        {
+            return result;
+        }
+        
+        return defaultValue;
+    }
+
+    string ParseString(string json, string fieldName, string defaultValue)
+    {
+        string pattern = $"\"{fieldName}\":";
+        int index = json.IndexOf(pattern);
+        
+        if (index == -1) return defaultValue;
+        
+        int start = json.IndexOf('"', index + pattern.Length);
+        if (start == -1) return defaultValue;
+        
+        int end = json.IndexOf('"', start + 1);
+        if (end == -1) return defaultValue;
+        
+        return json.Substring(start + 1, end - start - 1);
     }
 }
 
@@ -145,14 +249,16 @@ public sealed class TechTreeDB : MonoBehaviour
 public class UnitDef
 {
     public string id;
+    public string unitClass;        // NEW: from "class" field in JSON
     public float hp;
     public float speed;
     public float trainingTime;
     public string armorType;
     public float damage;
     public string damageType;
-    public DefenseBlock defense;
+    public DefenseBlock defense;    // NOW ACTUALLY PARSED!
     public float attackRange;
+    public float minAttackRange;    // NEW: minimum attack range (for archers)
     public float lineOfSight;
 }
 

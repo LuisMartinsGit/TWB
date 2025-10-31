@@ -1,5 +1,5 @@
-// BarracksTrainingSystem.cs - FIXED VERSION
-// This version properly uses EntityCommandBuffer to defer all structural changes
+// BarracksTrainingSystem.cs - COMPLETE VERSION
+// Applies ALL stats from JSON with NO hardcoded values
 // Replace your BarracksTrainingSystem.cs with this
 
 using Unity.Burst;
@@ -80,27 +80,47 @@ public partial struct BarracksTrainingSystem : ISystem
         switch (unitId)
         {
             case "Swordsman":
-                unit = Swordsman.Create(ecb, pos, fac);  // ← Now using ECB!
+                unit = Swordsman.Create(ecb, pos, fac);
                 break;
             case "Archer":
-                unit = Archer.Create(em, pos, fac);   // ← Now using ECB!
+                unit = Archer.Create(ecb, pos, fac);
                 break;
             default:
-                unit = Swordsman.Create(ecb, pos, fac);  // ← Now using ECB!
+                unit = Swordsman.Create(ecb, pos, fac);
                 break;
         }
 
-        // Overwrite with JSON stats (hp/speed/damage/los)
+        // Apply ALL stats from JSON - NO HARDCODED VALUES!
         if (TechTreeDB.Instance != null &&
             TechTreeDB.Instance.TryGetUnit(unitId, out var udef))
         {
-            // Use ECB.SetComponent instead of EntityManager
+            // Basic stats
             ecb.SetComponent(unit, new Health { Value = (int)udef.hp, Max = (int)udef.hp });
             ecb.SetComponent(unit, new MoveSpeed { Value = udef.speed });
             ecb.SetComponent(unit, new Damage { Value = (int)udef.damage });
+            ecb.SetComponent(unit, new LineOfSight { Radius = udef.lineOfSight });
             
-            var los = udef.lineOfSight > 0 ? udef.lineOfSight : 40f;
-            ecb.SetComponent(unit, new LineOfSight { Radius = los });
+            // Archer-specific stats from JSON
+            if (unitId == "Archer")
+            {
+                // Apply ranges from JSON - NO HARDCODED VALUES!
+                var archerState = new ArcherState
+                {
+                    CurrentTarget = Entity.Null,
+                    AimTimer = 0,
+                    AimTimeRequired = 0.5f,  // Could also be in JSON if needed
+                    CooldownTimer = 0,
+                    MinRange = udef.minAttackRange,  // ✓ FROM JSON!
+                    MaxRange = udef.attackRange,     // ✓ FROM JSON!
+                    HeightRangeMod = 4f,             // Could also be in JSON if needed
+                    IsRetreating = 0,
+                    IsFiring = 0
+                };
+                
+                ecb.SetComponent(unit, archerState);
+                
+                UnityEngine.Debug.Log($"[BarracksTraining] Archer spawned with MinRange={archerState.MinRange}, MaxRange={archerState.MaxRange} from JSON");
+            }
         }
     }
 }

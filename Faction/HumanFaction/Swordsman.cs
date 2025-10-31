@@ -1,5 +1,5 @@
-// Swordsman.cs - FIXED VERSION
-// This version uses EntityCommandBuffer to defer structural changes
+// Swordsman.cs - NO HARDCODED VALUES VERSION
+// Creates entity structure only - all stats loaded from JSON by BarracksTrainingSystem
 // Replace your Swordsman.cs with this
 
 using Unity.Entities;
@@ -10,7 +10,8 @@ namespace TheWaningBorder.Humans
 {
     public class Swordsman
     {
-        // NEW METHOD - uses EntityCommandBuffer
+        // ECB version - creates entity structure with PLACEHOLDER values
+        // Real stats are applied by BarracksTrainingSystem from JSON
         public static Entity Create(EntityCommandBuffer ecb, float3 pos, Faction fac)
         {
             var e = ecb.CreateEntity();
@@ -21,20 +22,18 @@ namespace TheWaningBorder.Humans
             ecb.AddComponent(e, new FactionTag { Value = fac });
             ecb.AddComponent(e, new UnitTag { Class = UnitClass.Melee });
             
-            // Baseline melee stats
-            ecb.AddComponent(e, new Health { Value = 120, Max = 120 });
-            ecb.AddComponent(e, new MoveSpeed { Value = 5.5f });
-            ecb.AddComponent(e, new Damage { Value = 10 });
-            
-            // Optional components
-            ecb.AddComponent(e, new LineOfSight { Radius = 12f });
+            // PLACEHOLDER values - will be overwritten by JSON stats
+            ecb.AddComponent(e, new Health { Value = 1, Max = 1 });
+            ecb.AddComponent(e, new MoveSpeed { Value = 1f });
+            ecb.AddComponent(e, new Damage { Value = 1 });
+            ecb.AddComponent(e, new LineOfSight { Radius = 1f });
             ecb.AddComponent(e, new Target { Value = Entity.Null });
             
             return e;
         }
 
-        // LEGACY METHOD - keep for backward compatibility if needed
-        // But don't use during iteration!
+        // LEGACY EntityManager version - for backward compatibility
+        // Also uses placeholder values - real stats from JSON
         public static Entity Create(EntityManager em, float3 pos, Faction fac)
         {
             var e = em.CreateEntity(
@@ -44,7 +43,9 @@ namespace TheWaningBorder.Humans
                 typeof(UnitTag),
                 typeof(Health),
                 typeof(MoveSpeed),
-                typeof(Damage)
+                typeof(Damage),
+                typeof(LineOfSight),
+                typeof(Target)
             );
 
             em.SetComponentData(e, new PresentationId { Id = 201 });
@@ -52,15 +53,12 @@ namespace TheWaningBorder.Humans
             em.SetComponentData(e, new FactionTag { Value = fac });
             em.SetComponentData(e, new UnitTag { Class = UnitClass.Melee });
 
-            em.SetComponentData(e, new Health { Value = 120, Max = 120 });
-            em.SetComponentData(e, new MoveSpeed { Value = 5.5f });
-            em.SetComponentData(e, new Damage { Value = 10 });
-
-            if (!em.HasComponent<LineOfSight>(e))
-                em.AddComponentData(e, new LineOfSight { Radius = 12f });
-
-            if (!em.HasComponent<Target>(e)) 
-                em.AddComponentData(e, new Target { Value = Entity.Null });
+            // PLACEHOLDER values - will be overwritten by JSON stats
+            em.SetComponentData(e, new Health { Value = 1, Max = 1 });
+            em.SetComponentData(e, new MoveSpeed { Value = 1f });
+            em.SetComponentData(e, new Damage { Value = 1 });
+            em.SetComponentData(e, new LineOfSight { Radius = 1f });
+            em.SetComponentData(e, new Target { Value = Entity.Null });
             
             return e;
         }

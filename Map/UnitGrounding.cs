@@ -18,7 +18,9 @@ public partial class UnitGroundingSystem : SystemBase
         const float offset = 0.01f;
 
         // Main-thread because TerrainData sampling is UnityEngine API
+        // Exclude arrow projectiles - they should fly through the air
         Entities
+            .WithNone<ArrowProjectile>()
             .ForEach((ref LocalTransform xf) =>
             {
                 float3 p = xf.Position;

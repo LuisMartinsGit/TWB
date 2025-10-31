@@ -6,7 +6,7 @@ using Unity.Transforms;
 
 [BurstCompile]
 [UpdateInGroup(typeof(SimulationSystemGroup))]
-[UpdateAfter(typeof(ArcherCombatSystem))]
+[UpdateAfter(typeof(UnifiedCombatSystem))]
 public partial struct ArrowProjectileSystem : ISystem
 {
     [BurstCompile]
@@ -88,7 +88,7 @@ public partial struct ArrowProjectileSystem : ISystem
                     if (targetHealth.ValueRO.Value <= 0)
                     {
                         targetHealth.ValueRW.Value = 0;
-                        // Death will be handled by another system
+                        // Death will be handled by DeathSystem
                     }
                     
                     shouldDestroy = true;

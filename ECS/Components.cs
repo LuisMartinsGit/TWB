@@ -365,3 +365,9 @@ public struct TrainQueueItem : IBufferElementData
 {
     public FixedString64Bytes UnitId;
 }
+
+public struct GuardPoint : IComponentData
+{
+    public float3 Position;
+    public byte Has; // 0/1
+}
