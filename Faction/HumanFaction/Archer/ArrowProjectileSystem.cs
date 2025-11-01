@@ -4,11 +4,18 @@ using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
 
+/// <summary>
+/// Arrow projectile system with realistic rotation
+/// FIXED: Correct pitch angle direction (positive = nose up, negative = nose down)
+/// </summary>
 [BurstCompile]
 [UpdateInGroup(typeof(SimulationSystemGroup))]
 [UpdateAfter(typeof(UnifiedCombatSystem))]
 public partial struct ArrowProjectileSystem : ISystem
 {
+    // Maximum pitch angle in radians (45 degrees)
+    private const float MaxPitchAngle = 0.785398f; // 45° in radians
+
     [BurstCompile]
     public void OnCreate(ref SystemState state)
     {
@@ -39,10 +46,10 @@ public partial struct ArrowProjectileSystem : ISystem
             var newPos = oldPos + arr.Velocity * dt;
             trans.Position = newPos;
             
-            // Update rotation to face movement direction
+            // Update rotation with realistic clamping
             if (math.lengthsq(arr.Velocity) > 0.001f)
             {
-                trans.Rotation = quaternion.LookRotation(arr.Velocity, new float3(0, 1, 0));
+                trans.Rotation = CalculateRealisticArrowRotation(arr.Velocity);
             }
             
             // Check for hits or out of bounds
@@ -102,5 +109,33 @@ public partial struct ArrowProjectileSystem : ISystem
                 ecb.DestroyEntity(entity);
             }
         }
+    }
+
+    /// <summary>
+    /// Calculate realistic arrow rotation with clamped pitch angle
+    /// FIXED: Correct pitch direction - negative pitch = arrow points down, positive = arrow points up
+    /// </summary>
+    [BurstCompile]
+    private static quaternion CalculateRealisticArrowRotation(float3 velocity)
+    {
+        // Get horizontal direction and speed
+        float3 horizontalDir = math.normalize(new float3(velocity.x, 0, velocity.z));
+        float horizontalSpeed = math.length(new float2(velocity.x, velocity.z));
+        
+        // Calculate pitch angle from velocity
+        // Negative atan2 because we want: velocity.y > 0 = nose up (negative pitch in Unity's left-handed system)
+        float pitchAngle = -math.atan2(velocity.y, horizontalSpeed);
+        
+        // Clamp pitch to realistic range (-45° to +45°)
+        pitchAngle = math.clamp(pitchAngle, -MaxPitchAngle, MaxPitchAngle);
+        
+        // Get yaw from horizontal direction
+        float yaw = math.atan2(horizontalDir.x, horizontalDir.z);
+        
+        // Construct rotation: First rotate around Y (yaw), then around local X (pitch)
+        quaternion yawRotation = quaternion.RotateY(yaw);
+        quaternion pitchRotation = quaternion.RotateX(pitchAngle);
+        
+        return math.mul(yawRotation, pitchRotation);
     }
 }

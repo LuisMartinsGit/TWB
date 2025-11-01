@@ -6,10 +6,11 @@ using Unity.Transforms;
 /// <summary>
 /// Simple movement system that handles unit movement and rotation.
 /// Combat logic is handled by UnifiedCombatSystem.
+/// FIXED: Does NOT remove AttackCommand - lets UnifiedCombatSystem handle it
 /// </summary>
 [BurstCompile]
 [UpdateInGroup(typeof(SimulationSystemGroup))]
-[UpdateAfter(typeof(UnifiedCombatSystem))]
+[UpdateBefore(typeof(UnifiedCombatSystem))]  // CHANGED: Run BEFORE combat system
 public partial struct SimplifiedMoveSystem : ISystem
 {
     private const float StopDistance = 0.5f;
@@ -76,16 +77,16 @@ public partial struct SimplifiedMoveSystem : ISystem
                 });
             }
 
-            // Clear any attack commands when explicitly ordered to move
-            if (em.HasComponent<AttackCommand>(entity))
-            {
-                ecb.RemoveComponent<AttackCommand>(entity);
-            }
+            // Clear Target - this is safe because we only set data
             if (em.HasComponent<Target>(entity))
             {
                 ecb.SetComponent(entity, new Target { Value = Entity.Null });
             }
 
+            // DON'T remove AttackCommand here - let UnifiedCombatSystem see the MoveCommand
+            // and skip attack processing for this entity
+            
+            // Remove MoveCommand itself - it's been processed
             ecb.RemoveComponent<MoveCommand>(entity);
         }
 

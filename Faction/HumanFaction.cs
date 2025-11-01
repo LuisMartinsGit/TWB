@@ -120,32 +120,7 @@ namespace TheWaningBorder.Gameplay
             var right = new float3(1, 0, 0);
             var fwd = new float3(0, 0, 1);
 
-            Swordsman.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
-            Swordsman.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
-            Swordsman.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
-            Swordsman.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
-            Swordsman.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
-            Swordsman.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
-            Swordsman.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
-            Swordsman.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
-            Swordsman.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
-            Swordsman.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
-            Swordsman.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
-
-
-            Archer.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
-            Archer.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
-            Archer.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
-            Archer.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
-            Archer.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
-            Archer.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
-            Archer.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
-            Archer.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
-            Archer.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
-            Archer.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
-            Archer.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
-            Archer.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
-
+InitialArmySpawner.SpawnTestArmy(em, spawnPos + right * 3f + fwd * 2f, fac);        
 
 
             Builder.Create(em, spawnPos - right * 3f + fwd * 2f, fac);

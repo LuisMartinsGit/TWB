@@ -7,6 +7,7 @@ using Unity.Transforms;
 /// <summary>
 /// Unified combat system handling both melee (swordsmen) and ranged (archers) units.
 /// Implements proper RTS behavior with guard points, auto-acquire, and command-based combat.
+/// FIXED: Respects active movement by checking DesiredDestination, height-compensated trajectories
 /// </summary>
 [BurstCompile]
 [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -67,6 +68,37 @@ public partial struct UnifiedCombatSystem : ISystem
             .WithAll<UnitTag>()
             .WithEntityAccess())
         {
+            // FIXED: Check if unit is actively moving by player command
+            // If DesiredDestination exists and was set by MoveCommand, skip this unit
+            if (em.HasComponent<DesiredDestination>(entity))
+            {
+                var dd = em.GetComponentData<DesiredDestination>(entity);
+                // If unit has active destination and no AttackCommand pointing at guard point,
+                // it means player issued a move order - respect it
+                if (dd.Has != 0)
+                {
+                    // Check if this is a return-to-guard movement (not player-ordered)
+                    bool isReturningToGuard = false;
+                    if (em.HasComponent<GuardPoint>(entity))
+                    {
+                        var gp = em.GetComponentData<GuardPoint>(entity);
+                        if (gp.Has != 0)
+                        {
+                            var distToGuard = math.distance(dd.Position, gp.Position);
+                            isReturningToGuard = distToGuard < 1f; // Moving to guard point
+                        }
+                    }
+                    
+                    // If not returning to guard, this is a player move order - skip attack processing
+                    if (!isReturningToGuard && !em.HasComponent<Target>(entity))
+                    {
+                        // Player ordered unit to move - clear AttackCommand
+                        ecb.RemoveComponent<AttackCommand>(entity);
+                        continue;
+                    }
+                }
+            }
+            
             var target = attackCmd.ValueRO.Target;
             
             // Validate target
@@ -128,6 +160,7 @@ public partial struct UnifiedCombatSystem : ISystem
 
         // =============================================================================
         // PHASE 2: Auto-acquire targets for idle units (no explicit attack command)
+        // FIXED: Don't auto-acquire if unit is actively moving
         // =============================================================================
         var enemyQuery = SystemAPI.QueryBuilder()
             .WithAll<LocalTransform, FactionTag, Health>()
@@ -146,6 +179,17 @@ public partial struct UnifiedCombatSystem : ISystem
             .WithNone<Target>()
             .WithEntityAccess())
         {
+            // FIXED: Don't auto-acquire if unit is actively moving
+            if (em.HasComponent<DesiredDestination>(entity))
+            {
+                var dd = em.GetComponentData<DesiredDestination>(entity);
+                if (dd.Has != 0)
+                {
+                    // Unit is moving - don't auto-acquire
+                    continue;
+                }
+            }
+            
             var myPos = transform.ValueRO.Position;
             var myFaction = faction.ValueRO.Value;
             var los = lineOfSight.ValueRO.Radius;
@@ -269,6 +313,23 @@ public partial struct UnifiedCombatSystem : ISystem
                         });
                     }
                 }
+            }
+        }
+
+        // =============================================================================
+        // PHASE 5: Clean up stale AttackCommand components
+        // Remove AttackCommand from units that finished moving without a target
+        // =============================================================================
+        foreach (var (dd, entity) in SystemAPI
+            .Query<RefRO<DesiredDestination>>()
+            .WithAll<AttackCommand>()
+            .WithNone<Target>()
+            .WithEntityAccess())
+        {
+            // If unit has no active destination and no target, clear AttackCommand
+            if (dd.ValueRO.Has == 0 && em.HasComponent<AttackCommand>(entity))
+            {
+                ecb.RemoveComponent<AttackCommand>(entity);
             }
         }
     }
@@ -515,33 +576,79 @@ public partial struct UnifiedCombatSystem : ISystem
     {
         // Shoot straight for < 15 units, parabolic for >= 15 units
         const float parabolicThreshold = 15f;
-        bool isParabolic = distance >= parabolicThreshold;
+        
+        // Calculate horizontal distance (ignore height)
+        float horizontalDist = math.length(new float2(targetPos.x - start.x, targetPos.z - start.z));
+        bool isParabolic = horizontalDist >= parabolicThreshold;
 
         float3 velocity;
         float flightTime;
 
         if (isParabolic)
         {
-            // Parabolic arc
-            var shotSpeed = 25f;
+            // Parabolic arc with height difference compensation
             var gravity = -9.8f;
-
-            var horizontalDist = math.length(new float2(targetPos.x - start.x, targetPos.z - start.z));
+            var heightDiff = targetPos.y - start.y; // Positive if target is higher
             
             var angle = math.radians(45f);
-            var vx = math.sqrt(math.abs(gravity) * horizontalDist / math.sin(2 * angle));
-            var vy = vx * math.sin(angle);
-
+            
+            float v0;
+            if (math.abs(heightDiff) < 0.1f)
+            {
+                // Nearly level - use standard formula
+                v0 = math.sqrt(math.abs(gravity) * horizontalDist / math.sin(2 * angle));
+            }
+            else
+            {
+                // Height difference - adjust initial velocity
+                float denominator = horizontalDist * math.sin(2 * angle) - 2 * heightDiff * math.cos(angle) * math.cos(angle);
+                
+                if (denominator > 0)
+                {
+                    v0 = math.sqrt(math.abs(gravity) * horizontalDist * horizontalDist / denominator);
+                }
+                else
+                {
+                    // Fallback if target is too high or close
+                    v0 = math.sqrt(math.abs(gravity) * horizontalDist / math.sin(2 * angle)) * 1.5f;
+                }
+            }
+            
+            // Calculate velocity components correctly
+            var vx = v0 * math.cos(angle);  // Horizontal component
+            var vy = v0 * math.sin(angle);  // Vertical component
+            
             var horizontalDir = math.normalize(new float3(targetPos.x - start.x, 0, targetPos.z - start.z));
             velocity = horizontalDir * vx + new float3(0, vy, 0);
             
-            flightTime = horizontalDist / vx;
+            // Calculate correct flight time with height
+            float discriminant = vy * vy + 2 * math.abs(gravity) * heightDiff;
+            if (discriminant >= 0)
+            {
+                flightTime = (vy + math.sqrt(discriminant)) / math.abs(gravity);
+            }
+            else
+            {
+                flightTime = horizontalDist / vx;
+            }
         }
         else
         {
-            // Straight shot
+            // Straight shot with slight upward angle
             var shotSpeed = 35f;
+            
             var direction = math.normalize(targetPos - start);
+            
+            // Ensure minimum upward angle of 5° for aesthetics
+            float minPitch = math.radians(5f);
+            float currentPitch = math.asin(direction.y);
+            if (currentPitch < minPitch)
+            {
+                float3 horizontalDir = math.normalize(new float3(direction.x, 0, direction.z));
+                direction = horizontalDir * math.cos(minPitch) + new float3(0, math.sin(minPitch), 0);
+                direction = math.normalize(direction);
+            }
+            
             velocity = direction * shotSpeed;
             flightTime = distance / shotSpeed;
         }
@@ -550,7 +657,7 @@ public partial struct UnifiedCombatSystem : ISystem
         var arrow = ecb.CreateEntity();
         ecb.AddComponent(arrow, new LocalTransform 
         { 
-            Position = start + new float3(0, 1.5f, 0), // Start at archer's upper body
+            Position = start + new float3(0, 1.5f, 0),
             Rotation = quaternion.LookRotation(velocity, new float3(0, 1, 0)),
             Scale = 1f
         });

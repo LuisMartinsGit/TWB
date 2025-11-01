@@ -1,5 +1,5 @@
-// BarracksTrainingSystem.cs - COMPLETE VERSION
-// Applies ALL stats from JSON with NO hardcoded values
+// BarracksTrainingSystem.cs - WITH SPAWN PLACEMENT
+// Spawns units in empty spaces, avoiding overlaps
 // Replace your BarracksTrainingSystem.cs with this
 
 using Unity.Burst;
@@ -74,23 +74,52 @@ public partial struct BarracksTrainingSystem : ISystem
         var tr  = em.GetComponentData<LocalTransform>(barracks);
         var fac = em.GetComponentData<FactionTag>(barracks).Value;
 
-        var pos = tr.Position + new float3(1.6f, 0, 1.6f);
+        // Check if barracks has a rally point
+        float3 spawnPos;
+        if (em.HasComponent<RallyPoint>(barracks))
+        {
+            var rally = em.GetComponentData<RallyPoint>(barracks);
+            if (rally.Has != 0)
+            {
+                // Spawn at rally point
+                spawnPos = rally.Position;
+            }
+            else
+            {
+                // Default spawn position (in front of barracks)
+                spawnPos = tr.Position + new float3(1.6f, 0, 1.6f);
+            }
+        }
+        else
+        {
+            // Default spawn position (in front of barracks)
+            spawnPos = tr.Position + new float3(1.6f, 0, 1.6f);
+        }
+
+        // Find empty position near desired spawn point
+        float spawnRadius = 0.5f; // Default unit radius
+        float3 finalPos = SpawnPlacementHelper.FindEmptyPosition(
+            spawnPos, 
+            spawnRadius, 
+            em, 
+            maxAttempts: 16
+        );
 
         Entity unit;
         switch (unitId)
         {
             case "Swordsman":
-                unit = Swordsman.Create(ecb, pos, fac);
+                unit = Swordsman.Create(ecb, finalPos, fac);
                 break;
             case "Archer":
-                unit = Archer.Create(ecb, pos, fac);
+                unit = Archer.Create(ecb, finalPos, fac);
                 break;
             default:
-                unit = Swordsman.Create(ecb, pos, fac);
+                unit = Swordsman.Create(ecb, finalPos, fac);
                 break;
         }
 
-        // Apply ALL stats from JSON - NO HARDCODED VALUES!
+        // Apply ALL stats from JSON
         if (TechTreeDB.Instance != null &&
             TechTreeDB.Instance.TryGetUnit(unitId, out var udef))
         {
@@ -100,26 +129,41 @@ public partial struct BarracksTrainingSystem : ISystem
             ecb.SetComponent(unit, new Damage { Value = (int)udef.damage });
             ecb.SetComponent(unit, new LineOfSight { Radius = udef.lineOfSight });
             
+            // Set Radius for collision/spacing
+            ecb.SetComponent(unit, new Radius { Value = 0.5f }); // Standard unit radius
+            
             // Archer-specific stats from JSON
             if (unitId == "Archer")
             {
-                // Apply ranges from JSON - NO HARDCODED VALUES!
                 var archerState = new ArcherState
                 {
                     CurrentTarget = Entity.Null,
                     AimTimer = 0,
-                    AimTimeRequired = 0.5f,  // Could also be in JSON if needed
+                    AimTimeRequired = 0.5f,
                     CooldownTimer = 0,
-                    MinRange = udef.minAttackRange,  // ✓ FROM JSON!
-                    MaxRange = udef.attackRange,     // ✓ FROM JSON!
-                    HeightRangeMod = 4f,             // Could also be in JSON if needed
+                    MinRange = udef.minAttackRange,
+                    MaxRange = udef.attackRange,
+                    HeightRangeMod = 4f,
                     IsRetreating = 0,
                     IsFiring = 0
                 };
                 
                 ecb.SetComponent(unit, archerState);
-                
-                UnityEngine.Debug.Log($"[BarracksTraining] Archer spawned with MinRange={archerState.MinRange}, MaxRange={archerState.MaxRange} from JSON");
+            }
+        }
+
+        // If barracks has rally point, move unit there
+        if (em.HasComponent<RallyPoint>(barracks))
+        {
+            var rally = em.GetComponentData<RallyPoint>(barracks);
+            if (rally.Has != 0)
+            {
+                // Give unit a move command to rally point
+                ecb.AddComponent(unit, new DesiredDestination 
+                { 
+                    Position = rally.Position,
+                    Has = 1
+                });
             }
         }
     }
