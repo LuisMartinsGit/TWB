@@ -371,3 +371,7 @@ public struct GuardPoint : IComponentData
     public float3 Position;
     public byte Has; // 0/1
 }
+public struct ArrowLanded : IComponentData
+{
+    public float TimeLeft; // seconds
+}

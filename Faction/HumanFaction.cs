@@ -131,6 +131,23 @@ namespace TheWaningBorder.Gameplay
             Swordsman.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
             Swordsman.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
             Swordsman.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
+
+
+            Archer.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
+            Archer.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
+            Archer.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
+            Archer.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
+            Archer.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
+            Archer.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
+            Archer.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
+            Archer.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
+            Archer.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
+            Archer.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
+            Archer.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
+            Archer.Create(em, spawnPos + right * 3f + fwd * 2f, fac);
+
+
+
             Builder.Create(em, spawnPos - right * 3f + fwd * 2f, fac);
 
         }

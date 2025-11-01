@@ -1,6 +1,5 @@
-// Swordsman.cs - NO HARDCODED VALUES VERSION
-// Creates entity structure only - all stats loaded from JSON by BarracksTrainingSystem
-// Replace your Swordsman.cs with this
+// Fixed Swordsman.cs - Loads stats from JSON in EntityManager version
+// Key change: EntityManager version now loads actual stats from TechTreeDB
 
 using Unity.Entities;
 using Unity.Mathematics;
@@ -32,8 +31,8 @@ namespace TheWaningBorder.Humans
             return e;
         }
 
-        // LEGACY EntityManager version - for backward compatibility
-        // Also uses placeholder values - real stats from JSON
+        // EntityManager version - FIXED: Now loads stats from JSON
+        // Used for initial spawn units
         public static Entity Create(EntityManager em, float3 pos, Faction fac)
         {
             var e = em.CreateEntity(
@@ -53,11 +52,24 @@ namespace TheWaningBorder.Humans
             em.SetComponentData(e, new FactionTag { Value = fac });
             em.SetComponentData(e, new UnitTag { Class = UnitClass.Melee });
 
-            // PLACEHOLDER values - will be overwritten by JSON stats
-            em.SetComponentData(e, new Health { Value = 1, Max = 1 });
-            em.SetComponentData(e, new MoveSpeed { Value = 1f });
-            em.SetComponentData(e, new Damage { Value = 1 });
-            em.SetComponentData(e, new LineOfSight { Radius = 1f });
+            // FIX: Load actual stats from JSON instead of using placeholders
+            if (TechTreeDB.Instance != null && TechTreeDB.Instance.TryGetUnit("Swordsman", out var udef))
+            {
+                em.SetComponentData(e, new Health { Value = (int)udef.hp, Max = (int)udef.hp });
+                em.SetComponentData(e, new MoveSpeed { Value = udef.speed });
+                em.SetComponentData(e, new Damage { Value = (int)udef.damage });
+                em.SetComponentData(e, new LineOfSight { Radius = udef.lineOfSight });
+            }
+            else
+            {
+                // Fallback if JSON not loaded yet
+                UnityEngine.Debug.LogWarning("[Swordsman] TechTreeDB not available, using fallback stats");
+                em.SetComponentData(e, new Health { Value = 100, Max = 100 });
+                em.SetComponentData(e, new MoveSpeed { Value = 4f });
+                em.SetComponentData(e, new Damage { Value = 10 });
+                em.SetComponentData(e, new LineOfSight { Radius = 12f });
+            }
+
             em.SetComponentData(e, new Target { Value = Entity.Null });
             
             return e;

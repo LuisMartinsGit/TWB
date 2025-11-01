@@ -32,33 +32,26 @@ public partial class ArrowVisualSystem : SystemBase
     protected override void OnUpdate()
     {
         var ecb = new EntityCommandBuffer(Unity.Collections.Allocator.Temp);
-        
-        // Create visuals for new arrows
+
+        // Create visuals only for arrows that don't have them yet
         Entities
-            .WithStoreEntityQueryInField(ref _newArrowsQuery)
+            .WithNone<ArrowVisual>()                    // <-- IMPORTANT
+            .WithAll<ArrowProjectile>()                 // (optional clarity)
             .WithoutBurst()
-            .ForEach((Entity entity, in LocalTransform transform, in ArrowProjectile arrow) =>
+            .ForEach((Entity entity, in LocalTransform transform) =>
             {
-                // Create the arrow visual GameObject
                 var arrowGO = CreateArrowVisual(transform.Position, transform.Rotation);
-                
-                // Add component to track this visual
-                ecb.AddComponent(entity, new ArrowVisual 
-                { 
-                    VisualEntity = Entity.Null 
-                });
-                
-                ecb.AddComponent(entity, new ArrowVisualData 
-                { 
-                    GameObjectInstanceID = arrowGO.GetInstanceID() 
-                });
+
+                ecb.AddComponent(entity, new ArrowVisual { VisualEntity = Entity.Null });
+                ecb.AddComponent(entity, new ArrowVisualData { GameObjectInstanceID = arrowGO.GetInstanceID() });
             }).Run();
-        
+
         ecb.Playback(EntityManager);
         ecb.Dispose();
-        
-        // Update existing arrow visuals - both position and rotation
+
+        // Update existing visuals
         Entities
+            .WithAll<ArrowVisualData>()
             .WithoutBurst()
             .ForEach((in LocalTransform transform, in ArrowVisualData visualData) =>
             {
@@ -70,7 +63,6 @@ public partial class ArrowVisualSystem : SystemBase
                 }
             }).Run();
     }
-
     private GameObject CreateArrowVisual(float3 position, quaternion rotation)
     {
         var arrowRoot = new GameObject("Arrow");
@@ -167,14 +159,15 @@ public partial class ArrowVisualCleanupSystem : SystemBase
     {
         // Clean up visuals for arrows that no longer exist
         Entities
-            .WithNone<ArrowProjectile>()
             .WithoutBurst()
-            .ForEach((Entity entity, in ArrowVisualData visualData) =>
+            .ForEach((in LocalTransform transform, in ArrowVisualData visualData) =>
             {
                 var go = Resources.InstanceIDToObject(visualData.GameObjectInstanceID) as GameObject;
                 if (go != null)
                 {
-                    Object.Destroy(go);
+                    go.transform.position = transform.Position;
+                    // Map model +X → entity/world +Z
+                    go.transform.rotation = (Quaternion)transform.Rotation * Quaternion.Euler(0f, -90f, 0f);
                 }
             }).Run();
     }

@@ -1,3 +1,6 @@
+// Fixed Builder.cs - Loads stats from JSON in EntityManager version
+// Key change: Already loads from JSON, no changes needed, but documenting for completeness
+
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
@@ -12,6 +15,7 @@ namespace TheWaningBorder.Humans
         private const float DefaultDamage = 2f;
         private const float DefaultLoS = 12f;
 
+        // EntityManager version - Already loads from JSON correctly
         public static Entity Create(EntityManager em, float3 pos, Faction fac)
         {
             // Try to fetch the "Builder" unit from the tech DB
@@ -40,7 +44,7 @@ namespace TheWaningBorder.Humans
                 typeof(LineOfSight)
             );
 
-            em.SetComponentData(e, new PresentationId { Id = 200 }); // your model/FX id
+            em.SetComponentData(e, new PresentationId { Id = 200 });
             em.SetComponentData(e, LocalTransform.FromPositionRotationScale(pos, quaternion.identity, 1f));
             em.SetComponentData(e, new FactionTag { Value = fac });
             em.SetComponentData(e, new UnitTag { Class = UnitClass.Economy });
