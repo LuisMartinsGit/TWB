@@ -1,15 +1,17 @@
 using Unity.Entities;
 using Unity.Mathematics;
 using TheWaningBorder.Humans;
+using UnityEngine;
 
 /// <summary>
-/// Helper for spawning initial armies with proper spacing.
-/// Use this instead of spawning units at the same position.
+/// Helper for spawning initial armies with proper spacing and ALL stats applied.
+/// Uses the same stat application method as BarracksTrainingSystem.
 /// </summary>
 public static class InitialArmySpawner
 {
     /// <summary>
     /// Spawn a group of units with automatic spacing in formation.
+    /// Ensures ALL components and stats are properly applied.
     /// </summary>
     public static void SpawnFormation(
         EntityManager em,
@@ -43,16 +45,11 @@ public static class InitialArmySpawner
             
             float3 spawnPos = topLeft + right * (col * spacing) + forward * (row * spacing);
             
+            // Create unit with all components
             var unit = Swordsman.Create(em, spawnPos, faction);
             
-            // Set stats if TechTreeDB available
-            if (TechTreeDB.Instance != null && TechTreeDB.Instance.TryGetUnit("Swordsman", out var udef))
-            {
-                em.SetComponentData(unit, new Health { Value = (int)udef.hp, Max = (int)udef.hp });
-                em.SetComponentData(unit, new MoveSpeed { Value = udef.speed });
-                em.SetComponentData(unit, new Damage { Value = (int)udef.damage });
-                em.SetComponentData(unit, new LineOfSight { Radius = udef.lineOfSight });
-            }
+            // Apply ALL stats from JSON (same as BarracksTrainingSystem)
+            ApplyUnitStats(em, unit, "Swordsman");
             
             unitIndex++;
         }
@@ -65,40 +62,80 @@ public static class InitialArmySpawner
             
             float3 spawnPos = topLeft + right * (col * spacing) + forward * (row * spacing);
             
+            // Create unit with all components
             var unit = Archer.Create(em, spawnPos, faction);
             
-            // Set stats if TechTreeDB available
-            if (TechTreeDB.Instance != null && TechTreeDB.Instance.TryGetUnit("Archer", out var udef))
-            {
-                em.SetComponentData(unit, new Health { Value = (int)udef.hp, Max = (int)udef.hp });
-                em.SetComponentData(unit, new MoveSpeed { Value = udef.speed });
-                em.SetComponentData(unit, new Damage { Value = (int)udef.damage });
-                em.SetComponentData(unit, new LineOfSight { Radius = udef.lineOfSight });
-                
-                var archerState = new ArcherState
-                {
-                    CurrentTarget = Entity.Null,
-                    AimTimer = 0,
-                    AimTimeRequired = 0.5f,
-                    CooldownTimer = 0,
-                    MinRange = udef.minAttackRange,
-                    MaxRange = udef.attackRange,
-                    HeightRangeMod = 4f,
-                    IsRetreating = 0,
-                    IsFiring = 0
-                };
-                em.SetComponentData(unit, archerState);
-            }
+            // Apply ALL stats from JSON (same as BarracksTrainingSystem)
+            ApplyUnitStats(em, unit, "Archer");
             
             unitIndex++;
         }
+        
+        Debug.Log($"InitialArmySpawner: Created {swordsmenCount} swordsmen and {archersCount} archers for faction {faction}");
     }
     
     /// <summary>
-    /// Quick spawn for testing - 11 swordsmen, 12 archers in formation.
+    /// Apply stats from TechTreeDB to a unit - EXACTLY like BarracksTrainingSystem does it.
     /// </summary>
+    private static void ApplyUnitStats(EntityManager em, Entity unit, string unitId)
+    {
+        if (TechTreeDB.Instance == null)
+        {
+            Debug.LogWarning($"InitialArmySpawner: TechTreeDB.Instance is NULL! Unit {unitId} will have placeholder stats.");
+            return;
+        }
+
+        if (!TechTreeDB.Instance.TryGetUnit(unitId, out var udef))
+        {
+            Debug.LogWarning($"InitialArmySpawner: Unit '{unitId}' not found in TechTreeDB! Using placeholder stats.");
+            return;
+        }
+
+        // Apply basic stats
+        em.SetComponentData(unit, new Health { Value = (int)udef.hp, Max = (int)udef.hp });
+        em.SetComponentData(unit, new MoveSpeed { Value = udef.speed });
+        em.SetComponentData(unit, new Damage { Value = (int)udef.damage });
+        em.SetComponentData(unit, new LineOfSight { Radius = udef.lineOfSight });
+        
+        // Ensure Radius component exists (for collision/spacing)
+        if (!em.HasComponent<Radius>(unit))
+        {
+            em.AddComponentData(unit, new Radius { Value = 0.5f });
+        }
+        else
+        {
+            em.SetComponentData(unit, new Radius { Value = 0.5f });
+        }
+        
+        // Archer-specific stats
+        if (unitId == "Archer")
+        {
+            if (!em.HasComponent<ArcherState>(unit))
+            {
+                Debug.LogWarning($"InitialArmySpawner: Archer unit missing ArcherState component!");
+                return;
+            }
+            
+            var archerState = new ArcherState
+            {
+                CurrentTarget = Entity.Null,
+                AimTimer = 0,
+                AimTimeRequired = 0.5f,
+                CooldownTimer = 0,
+                MinRange = udef.minAttackRange,
+                MaxRange = udef.attackRange,
+                HeightRangeMod = 4f,
+                IsRetreating = 0,
+                IsFiring = 0
+            };
+            
+            em.SetComponentData(unit, archerState);
+        }
+        
+        Debug.Log($"InitialArmySpawner: Applied stats to {unitId} - HP:{udef.hp}, Speed:{udef.speed}, Damage:{udef.damage}, LOS:{udef.lineOfSight}");
+    }
     public static void SpawnTestArmy(EntityManager em, float3 position, Faction faction)
     {
-        SpawnFormation(em, position, swordsmenCount: 11, archersCount: 12, faction);
+        SpawnFormation(em, position, swordsmenCount: 0, archersCount: 200, faction);
     }
 }
