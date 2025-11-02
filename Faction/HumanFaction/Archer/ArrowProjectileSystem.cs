@@ -5,16 +5,24 @@ using Unity.Mathematics;
 using Unity.Transforms;
 
 /// <summary>
-/// Arrow projectile system with realistic rotation
-/// FIXED: Correct pitch angle direction (positive = nose up, negative = nose down)
+/// Arrow projectile system with HOMING behavior - arrows track and always hit their targets
+/// Arrows follow targets and guarantee hits (no accuracy system)
 /// </summary>
 [BurstCompile]
 [UpdateInGroup(typeof(SimulationSystemGroup))]
 [UpdateAfter(typeof(UnifiedCombatSystem))]
 public partial struct ArrowProjectileSystem : ISystem
 {
-    // Maximum pitch angle in radians (45 degrees)
-    private const float MaxPitchAngle = 0.785398f; // 45° in radians
+    // Maximum lifetime before despawn (2 seconds)
+    private const float MaxArrowLifetime = 2.0f;
+    
+    // Homing parameters
+    private const float ArrowSpeed = 30f;          // Arrow travel speed
+    private const float HomingStrength = 8f;       // How aggressively arrows track (radians/sec)
+    private const float HitRadius = 0.8f;          // Distance to register a hit
+    
+    // Maximum pitch angle in radians (45 degrees) - for visual only
+    private const float MaxPitchAngle = 0.785398f;
 
     [BurstCompile]
     public void OnCreate(ref SystemState state)
@@ -29,77 +37,100 @@ public partial struct ArrowProjectileSystem : ISystem
         var ecb = ecbSingleton.CreateCommandBuffer(state.WorldUnmanaged);
         var dt = SystemAPI.Time.DeltaTime;
         var time = SystemAPI.Time.ElapsedTime;
+        var em = state.EntityManager;
 
-        // Move and update arrows
+        // Move and update arrows with HOMING behavior
         foreach (var (transform, arrow, projectile, entity) 
-                 in SystemAPI.Query<RefRW<LocalTransform>, RefRW<ArrowProjectile>, RefRO<Projectile>>()
+                 in SystemAPI.Query<RefRW<LocalTransform>, RefRW<ArrowProjectile>, RefRW<Projectile>>()
                  .WithEntityAccess())
         {
             ref var trans = ref transform.ValueRW;
             ref var arr = ref arrow.ValueRW;
+            ref var proj = ref projectile.ValueRW;
             
-            // Apply gravity
-            arr.Velocity.y += arr.Gravity * dt;
-            
-            // Move arrow
-            var oldPos = trans.Position;
-            var newPos = oldPos + arr.Velocity * dt;
-            trans.Position = newPos;
-            
-            // Update rotation with realistic clamping
-            if (math.lengthsq(arr.Velocity) > 0.001f)
-            {
-                trans.Rotation = CalculateRealisticArrowRotation(arr.Velocity);
-            }
-            
-            // Check for hits or out of bounds
+            var arrowPos = trans.Position;
             var shouldDestroy = false;
             
-            // Ground collision
-            if (newPos.y < 0.5f)
-            {
-                shouldDestroy = true;
-            }
-            
-            // Flight time exceeded
+            // Calculate elapsed time since spawn
             var elapsed = (float)(time - projectile.ValueRO.StartTime);
-            if (elapsed > projectile.ValueRO.FlightTime + 1f) // +1s grace period
+            
+            // DESPAWN AFTER 2 SECONDS (safety check)
+            if (elapsed > MaxArrowLifetime)
             {
                 shouldDestroy = true;
             }
-            
-            // Check collision with units
-            foreach (var (targetTransform, targetHealth, targetFaction, targetEntity) 
-                     in SystemAPI.Query<RefRO<LocalTransform>, RefRW<Health>, RefRO<FactionTag>>()
-                     .WithAll<UnitTag>()
-                     .WithEntityAccess())
+            else
             {
-                // Don't hit own faction
-                if (targetFaction.ValueRO.Value == projectile.ValueRO.Faction)
-                    continue;
+                // HOMING BEHAVIOR - Track the target
+                float3 targetPos = proj.End; // Default to original target position
+                Entity targetEntity = proj.Target;
+                bool targetIsAlive = false;
                 
-                // Don't hit dead units
-                if (targetHealth.ValueRO.Value <= 0)
-                    continue;
-                
-                var targetPos = targetTransform.ValueRO.Position;
-                var dist = math.distance(newPos, targetPos);
-                
-                // Hit detection (simple sphere check)
-                if (dist < 1.0f) // 1 unit hit radius
+                // Check if target still exists and is alive
+                if (targetEntity != Entity.Null && em.Exists(targetEntity))
                 {
-                    // Apply damage
-                    targetHealth.ValueRW.Value -= projectile.ValueRO.Damage;
-                    
-                    // Check for death
-                    if (targetHealth.ValueRO.Value <= 0)
+                    if (em.HasComponent<Health>(targetEntity))
                     {
-                        targetHealth.ValueRW.Value = 0;
-                        // Death will be handled by DeathSystem
+                        var targetHealth = em.GetComponentData<Health>(targetEntity);
+                        if (targetHealth.Value > 0)
+                        {
+                            targetIsAlive = true;
+                            // Update target position to current location
+                            if (em.HasComponent<LocalTransform>(targetEntity))
+                            {
+                                var targetTransform = em.GetComponentData<LocalTransform>(targetEntity);
+                                targetPos = targetTransform.Position;
+                                proj.End = targetPos; // Update stored target position
+                            }
+                        }
                     }
-                    
+                }
+                
+                // Calculate direction to target
+                float3 toTarget = targetPos - arrowPos;
+                float distToTarget = math.length(toTarget);
+                
+                // Check if we hit the target
+                if (distToTarget < HitRadius)
+                {
+                    // GUARANTEED HIT - Apply damage
+                    if (targetIsAlive && targetEntity != Entity.Null && em.Exists(targetEntity))
+                    {
+                        if (em.HasComponent<Health>(targetEntity))
+                        {
+                            var targetHealth = em.GetComponentData<Health>(targetEntity);
+                            targetHealth.Value -= proj.Damage;
+                            
+                            if (targetHealth.Value <= 0)
+                            {
+                                targetHealth.Value = 0;
+                            }
+                            
+                            em.SetComponentData(targetEntity, targetHealth);
+                        }
+                    }
                     shouldDestroy = true;
-                    break;
+                }
+                else
+                {
+                    // HOMING - Steer towards target
+                    float3 desiredDirection = math.normalize(toTarget);
+                    float3 currentDirection = math.normalize(arr.Velocity);
+                    
+                    // Smoothly interpolate direction (homing behavior)
+                    float3 newDirection = math.normalize(math.lerp(currentDirection, desiredDirection, HomingStrength * dt));
+                    
+                    // Set velocity with constant speed
+                    arr.Velocity = newDirection * ArrowSpeed;
+                    
+                    // Move arrow
+                    trans.Position = arrowPos + arr.Velocity * dt;
+                    
+                    // Update rotation to point in direction of travel
+                    if (math.lengthsq(arr.Velocity) > 0.001f)
+                    {
+                        trans.Rotation = CalculateRealisticArrowRotation(arr.Velocity);
+                    }
                 }
             }
             
@@ -113,7 +144,6 @@ public partial struct ArrowProjectileSystem : ISystem
 
     /// <summary>
     /// Calculate realistic arrow rotation with clamped pitch angle
-    /// FIXED: Correct pitch direction - negative pitch = arrow points down, positive = arrow points up
     /// </summary>
     [BurstCompile]
     private static quaternion CalculateRealisticArrowRotation(float3 velocity)
@@ -123,7 +153,6 @@ public partial struct ArrowProjectileSystem : ISystem
         float horizontalSpeed = math.length(new float2(velocity.x, velocity.z));
         
         // Calculate pitch angle from velocity
-        // Negative atan2 because we want: velocity.y > 0 = nose up (negative pitch in Unity's left-handed system)
         float pitchAngle = -math.atan2(velocity.y, horizontalSpeed);
         
         // Clamp pitch to realistic range (-45° to +45°)

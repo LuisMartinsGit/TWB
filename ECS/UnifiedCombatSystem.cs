@@ -16,12 +16,12 @@ public partial struct UnifiedCombatSystem : ISystem
 {
     private const float MaxGuardDistance = 20f;
     private const float GuardReturnThreshold = 2f;
-    
+
     // Height damage modifier settings
     private const float HeightDamageScale = 0.04f; // 4% per unit height diff
     private const float MaxHeightBonus = 0.20f;    // Cap at +20%
     private const float MaxHeightPenalty = -0.20f; // Cap at -20%
-    
+
     [BurstCompile]
     public void OnCreate(ref SystemState state)
     {
@@ -40,27 +40,27 @@ public partial struct UnifiedCombatSystem : ISystem
         // =============================================================================
         // PHASE 0: Initialize required components for combat
         // =============================================================================
-        
+
         // Initialize GuardPoint for units that don't have one
         foreach (var (transform, entity) in SystemAPI.Query<RefRO<LocalTransform>>()
             .WithAll<UnitTag>()
             .WithNone<GuardPoint>()
             .WithEntityAccess())
         {
-            ecb.AddComponent(entity, new GuardPoint 
-            { 
+            ecb.AddComponent(entity, new GuardPoint
+            {
                 Position = transform.ValueRO.Position,
                 Has = 1
             });
         }
-        
+
         // Initialize AttackCooldown for units that don't have one
         foreach (var (tag, entity) in SystemAPI.Query<RefRO<UnitTag>>()
             .WithNone<AttackCooldown>()
             .WithEntityAccess())
         {
-            ecb.AddComponent(entity, new AttackCooldown 
-            { 
+            ecb.AddComponent(entity, new AttackCooldown
+            {
                 Cooldown = 1.5f,
                 Timer = 0f
             });
@@ -90,7 +90,7 @@ public partial struct UnifiedCombatSystem : ISystem
                             isReturningToGuard = distToGuard < 1f;
                         }
                     }
-                    
+
                     if (!isReturningToGuard && !em.HasComponent<Target>(entity))
                     {
                         ecb.RemoveComponent<AttackCommand>(entity);
@@ -98,9 +98,9 @@ public partial struct UnifiedCombatSystem : ISystem
                     }
                 }
             }
-            
+
             var target = attackCmd.ValueRO.Target;
-            
+
             if (target == Entity.Null || !em.Exists(target))
             {
                 ecb.RemoveComponent<AttackCommand>(entity);
@@ -129,8 +129,8 @@ public partial struct UnifiedCombatSystem : ISystem
             }
             else
             {
-                ecb.AddComponent(entity, new GuardPoint 
-                { 
+                ecb.AddComponent(entity, new GuardPoint
+                {
                     Position = transform.ValueRO.Position,
                     Has = 1
                 });
@@ -179,11 +179,11 @@ public partial struct UnifiedCombatSystem : ISystem
                     continue;
                 }
             }
-            
+
             var myPos = transform.ValueRO.Position;
             var myFaction = faction.ValueRO.Value;
             var los = lineOfSight.ValueRO.Radius;
-            
+
             if (em.HasComponent<GuardPoint>(entity))
             {
                 var guardPoint = em.GetComponentData<GuardPoint>(entity);
@@ -194,16 +194,16 @@ public partial struct UnifiedCombatSystem : ISystem
                     {
                         if (!em.HasComponent<DesiredDestination>(entity))
                         {
-                            ecb.AddComponent(entity, new DesiredDestination 
-                            { 
+                            ecb.AddComponent(entity, new DesiredDestination
+                            {
                                 Position = guardPoint.Position,
                                 Has = 1
                             });
                         }
                         else
                         {
-                            ecb.SetComponent(entity, new DesiredDestination 
-                            { 
+                            ecb.SetComponent(entity, new DesiredDestination
+                            {
                                 Position = guardPoint.Position,
                                 Has = 1
                             });
@@ -283,16 +283,16 @@ public partial struct UnifiedCombatSystem : ISystem
                 {
                     if (!em.HasComponent<DesiredDestination>(entity))
                     {
-                        ecb.AddComponent(entity, new DesiredDestination 
-                        { 
+                        ecb.AddComponent(entity, new DesiredDestination
+                        {
                             Position = gpPos,
                             Has = 1
                         });
                     }
                     else
                     {
-                        ecb.SetComponent(entity, new DesiredDestination 
-                        { 
+                        ecb.SetComponent(entity, new DesiredDestination
+                        {
                             Position = gpPos,
                             Has = 1
                         });
@@ -326,10 +326,10 @@ public partial struct UnifiedCombatSystem : ISystem
     {
         float heightDiff = attackerHeight - targetHeight;
         float modifier = heightDiff * HeightDamageScale;
-        
+
         // Clamp to ±20%
         modifier = math.clamp(modifier, MaxHeightPenalty, MaxHeightBonus);
-        
+
         return 1.0f + modifier;
     }
 
@@ -342,7 +342,7 @@ public partial struct UnifiedCombatSystem : ISystem
     {
         float modifiedDamage = baseDamage * heightModifier;
         int finalDamage = (int)math.round(modifiedDamage);
-        
+
         // Ensure minimum 1 damage
         return math.max(1, finalDamage);
     }
@@ -360,7 +360,7 @@ public partial struct UnifiedCombatSystem : ISystem
         {
             ref var tgt = ref target.ValueRW;
             ref var cd = ref cooldown.ValueRW;
-            
+
             if (cd.Timer > 0)
             {
                 cd.Timer -= dt;
@@ -407,7 +407,7 @@ public partial struct UnifiedCombatSystem : ISystem
                     // Calculate height-based damage modifier
                     float heightModifier = CalculateHeightDamageModifier(myPos.y, targetPos.y);
                     int finalDamage = CalculateFinalDamage(damage.ValueRO.Value, heightModifier);
-                    
+
                     // Apply damage
                     var health = em.GetComponentData<Health>(tgt.Value);
                     health.Value -= finalDamage;
@@ -421,16 +421,16 @@ public partial struct UnifiedCombatSystem : ISystem
             {
                 if (!em.HasComponent<DesiredDestination>(entity))
                 {
-                    ecb.AddComponent(entity, new DesiredDestination 
-                    { 
+                    ecb.AddComponent(entity, new DesiredDestination
+                    {
                         Position = targetPos,
                         Has = 1
                     });
                 }
                 else
                 {
-                    ecb.SetComponent(entity, new DesiredDestination 
-                    { 
+                    ecb.SetComponent(entity, new DesiredDestination
+                    {
                         Position = targetPos,
                         Has = 1
                     });
@@ -500,16 +500,16 @@ public partial struct UnifiedCombatSystem : ISystem
 
                 if (!em.HasComponent<DesiredDestination>(entity))
                 {
-                    ecb.AddComponent(entity, new DesiredDestination 
-                    { 
+                    ecb.AddComponent(entity, new DesiredDestination
+                    {
                         Position = retreatTarget,
                         Has = 1
                     });
                 }
                 else
                 {
-                    ecb.SetComponent(entity, new DesiredDestination 
-                    { 
+                    ecb.SetComponent(entity, new DesiredDestination
+                    {
                         Position = retreatTarget,
                         Has = 1
                     });
@@ -535,14 +535,14 @@ public partial struct UnifiedCombatSystem : ISystem
                 if (archer.AimTimer >= archer.AimTimeRequired && archer.CooldownTimer <= 0)
                 {
                     archer.IsFiring = 1;
-                    
+
                     // Calculate height-based damage modifier for arrow
                     float heightModifier = CalculateHeightDamageModifier(myPos.y, targetPos.y);
                     int finalDamage = CalculateFinalDamage(damage.ValueRO.Value, heightModifier);
-                    
+
                     // Create arrow with modified damage
-                    CreateArrow(ref ecb, myPos, targetPos, dist, entity, 
-                        faction.ValueRO.Value, finalDamage, (float)time);
+                    CreateArrow(ref ecb, myPos, targetPos, dist, entity,
+                        faction.ValueRO.Value, finalDamage, (float)time, tgt.Value);
 
                     archer.CooldownTimer = 1.5f;
                     archer.AimTimer = 0;
@@ -556,16 +556,16 @@ public partial struct UnifiedCombatSystem : ISystem
 
                 if (!em.HasComponent<DesiredDestination>(entity))
                 {
-                    ecb.AddComponent(entity, new DesiredDestination 
-                    { 
+                    ecb.AddComponent(entity, new DesiredDestination
+                    {
                         Position = targetPos,
                         Has = 1
                     });
                 }
                 else
                 {
-                    ecb.SetComponent(entity, new DesiredDestination 
-                    { 
+                    ecb.SetComponent(entity, new DesiredDestination
+                    {
                         Position = targetPos,
                         Has = 1
                     });
@@ -574,82 +574,31 @@ public partial struct UnifiedCombatSystem : ISystem
         }
     }
 
+
     [BurstCompile]
-    private void CreateArrow(ref EntityCommandBuffer ecb, float3 start, float3 targetPos, 
-        float distance, Entity shooter, Faction faction, int damage, float time)
+    private void CreateArrow(ref EntityCommandBuffer ecb, float3 start, float3 targetPos,
+        float distance, Entity shooter, Faction faction, int damage, float time, Entity targetEntity)
     {
-        const float parabolicThreshold = 15f;
-        
-        float horizontalDist = math.length(new float2(targetPos.x - start.x, targetPos.z - start.z));
-        bool isParabolic = horizontalDist >= parabolicThreshold;
+        // Simple initial velocity towards target
+        var shotSpeed = 30f;
+        var direction = math.normalize(targetPos - start);
 
-        float3 velocity;
-        float flightTime;
+        // Add slight upward arc for visual appeal
+        float minPitch = math.radians(5f);
+        float currentPitch = math.asin(direction.y);
+        if (currentPitch < minPitch)
+        {
+            float3 horizontalDir = math.normalize(new float3(direction.x, 0, direction.z));
+            direction = horizontalDir * math.cos(minPitch) + new float3(0, math.sin(minPitch), 0);
+            direction = math.normalize(direction);
+        }
 
-        if (isParabolic)
-        {
-            var gravity = -9.8f;
-            var heightDiff = targetPos.y - start.y;
-            
-            var angle = math.radians(45f);
-            
-            float v0;
-            if (math.abs(heightDiff) < 0.1f)
-            {
-                v0 = math.sqrt(math.abs(gravity) * horizontalDist / math.sin(2 * angle));
-            }
-            else
-            {
-                float denominator = horizontalDist * math.sin(2 * angle) - 2 * heightDiff * math.cos(angle) * math.cos(angle);
-                
-                if (denominator > 0)
-                {
-                    v0 = math.sqrt(math.abs(gravity) * horizontalDist * horizontalDist / denominator);
-                }
-                else
-                {
-                    v0 = math.sqrt(math.abs(gravity) * horizontalDist / math.sin(2 * angle)) * 1.5f;
-                }
-            }
-            
-            var vx = v0 * math.cos(angle);
-            var vy = v0 * math.sin(angle);
-            
-            var horizontalDir = math.normalize(new float3(targetPos.x - start.x, 0, targetPos.z - start.z));
-            velocity = horizontalDir * vx + new float3(0, vy, 0);
-            
-            float discriminant = vy * vy + 2 * math.abs(gravity) * heightDiff;
-            if (discriminant >= 0)
-            {
-                flightTime = (vy + math.sqrt(discriminant)) / math.abs(gravity);
-            }
-            else
-            {
-                flightTime = horizontalDist / vx;
-            }
-        }
-        else
-        {
-            var shotSpeed = 35f;
-            
-            var direction = math.normalize(targetPos - start);
-            
-            float minPitch = math.radians(5f);
-            float currentPitch = math.asin(direction.y);
-            if (currentPitch < minPitch)
-            {
-                float3 horizontalDir = math.normalize(new float3(direction.x, 0, direction.z));
-                direction = horizontalDir * math.cos(minPitch) + new float3(0, math.sin(minPitch), 0);
-                direction = math.normalize(direction);
-            }
-            
-            velocity = direction * shotSpeed;
-            flightTime = distance / shotSpeed;
-        }
+        var velocity = direction * shotSpeed;
+        var estimatedFlightTime = distance / shotSpeed;
 
         var arrow = ecb.CreateEntity();
-        ecb.AddComponent(arrow, new LocalTransform 
-        { 
+        ecb.AddComponent(arrow, new LocalTransform
+        {
             Position = start + new float3(0, 1.5f, 0),
             Rotation = quaternion.LookRotation(velocity, new float3(0, 1, 0)),
             Scale = 1f
@@ -658,9 +607,9 @@ public partial struct UnifiedCombatSystem : ISystem
         ecb.AddComponent(arrow, new ArrowProjectile
         {
             Velocity = velocity,
-            Gravity = isParabolic ? -9.8f : -1f,
+            Gravity = 0f,  // No gravity for homing arrows
             Shooter = shooter,
-            IsParabolic = isParabolic
+            IsParabolic = false
         });
 
         ecb.AddComponent(arrow, new Projectile
@@ -668,9 +617,9 @@ public partial struct UnifiedCombatSystem : ISystem
             Start = start,
             End = targetPos,
             StartTime = time,
-            FlightTime = flightTime,
-            Damage = damage, // Already modified by height
-            Target = Entity.Null,
+            FlightTime = estimatedFlightTime,
+            Damage = damage,
+            Target = targetEntity,  // IMPORTANT: Store target entity for homing!
             Faction = faction
         });
     }

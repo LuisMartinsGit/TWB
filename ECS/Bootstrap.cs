@@ -26,9 +26,7 @@ namespace CrystallineRTS.Bootstrap
             if (!string.Equals(scene.name, "Game")) return;
             if (_didSetupThisScene) return;
             _didSetupThisScene = true;
-
-            // *** CRITICAL: Initialize TechTreeDB FIRST ***
-            EnsureTechTreeDB();                              // ← Step 1: Create TechTreeDB
+            EnsureTechTreeDB();                             
 
             GameCamera.Ensure();
 
@@ -40,7 +38,7 @@ namespace CrystallineRTS.Bootstrap
             TryAddComponent<ProceduralTerrain>(go);
             TryAddComponent<HealthbarOverlay>(go);
             
-            HumanFaction.GeneratePlayers(GameSettings.TotalPlayers);  // ← Step 2: Spawn players
+            HumanFaction.GeneratePlayers(GameSettings.TotalPlayers); 
             EconomyBootstrap.EnsureFactionBanks(GameSettings.TotalPlayers);
             
             TryAddComponent<EntityViewManager>(go);

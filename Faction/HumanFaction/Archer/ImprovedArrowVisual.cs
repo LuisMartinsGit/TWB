@@ -1,3 +1,4 @@
+using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
@@ -35,12 +36,14 @@ public partial class ArrowVisualSystem : SystemBase
 
         // Create visuals only for arrows that don't have them yet
         Entities
-            .WithNone<ArrowVisual>()                    // <-- IMPORTANT
-            .WithAll<ArrowProjectile>()                 // (optional clarity)
+            .WithNone<ArrowVisual>()
+            .WithAll<ArrowProjectile>()
             .WithoutBurst()
             .ForEach((Entity entity, in LocalTransform transform) =>
             {
-                var arrowGO = CreateArrowVisual(transform.Position, transform.Rotation);
+                // Apply rotation correction: model +X → world +Z
+                var correctedRotation = (Quaternion)transform.Rotation * Quaternion.Euler(0f, -90f, 0f);
+                var arrowGO = CreateArrowVisual(transform.Position, correctedRotation);
 
                 ecb.AddComponent(entity, new ArrowVisual { VisualEntity = Entity.Null });
                 ecb.AddComponent(entity, new ArrowVisualData { GameObjectInstanceID = arrowGO.GetInstanceID() });
@@ -59,11 +62,13 @@ public partial class ArrowVisualSystem : SystemBase
                 if (go != null)
                 {
                     go.transform.position = transform.Position;
-                    go.transform.rotation = transform.Rotation;
+                    // Map model +X → entity/world +Z (rotate -90 degrees around Y)
+                    go.transform.rotation = (Quaternion)transform.Rotation * Quaternion.Euler(0f, -90f, 0f);
                 }
             }).Run();
     }
-    private GameObject CreateArrowVisual(float3 position, quaternion rotation)
+    
+    private GameObject CreateArrowVisual(float3 position, Quaternion rotation)
     {
         var arrowRoot = new GameObject("Arrow");
         arrowRoot.transform.position = position;
@@ -75,7 +80,6 @@ public partial class ArrowVisualSystem : SystemBase
         shaft.transform.SetParent(arrowRoot.transform, false);
         
         // Make it arrow-shaped: thin and long
-        // Scale: X = length, Y/Z = thickness
         shaft.transform.localScale = new Vector3(0.03f, 0.6f, 0.03f);
         
         // Rotate cylinder to point along X-axis (forward)
@@ -148,27 +152,55 @@ public partial class ArrowVisualSystem : SystemBase
 [UpdateAfter(typeof(ArrowVisualSystem))]
 public partial class ArrowVisualCleanupSystem : SystemBase
 {
-    private EntityQuery _destroyedArrowsQuery;
+    private System.Collections.Generic.Dictionary<int, GameObject> _trackedArrows;
     
     protected override void OnCreate()
     {
-        RequireForUpdate<EndSimulationEntityCommandBufferSystem.Singleton>();
+        _trackedArrows = new System.Collections.Generic.Dictionary<int, GameObject>();
     }
 
     protected override void OnUpdate()
     {
-        // Clean up visuals for arrows that no longer exist
+        var currentInstanceIDs = new System.Collections.Generic.HashSet<int>();
+        
+        // Track all existing arrow entities and their GameObjects
         Entities
+            .WithAll<ArrowVisualData>()
             .WithoutBurst()
-            .ForEach((in LocalTransform transform, in ArrowVisualData visualData) =>
+            .ForEach((in ArrowVisualData visualData) =>
             {
-                var go = Resources.InstanceIDToObject(visualData.GameObjectInstanceID) as GameObject;
-                if (go != null)
+                int instanceID = visualData.GameObjectInstanceID;
+                currentInstanceIDs.Add(instanceID);
+                
+                // Track GameObject if we haven't seen it yet
+                if (!_trackedArrows.ContainsKey(instanceID))
                 {
-                    go.transform.position = transform.Position;
-                    // Map model +X → entity/world +Z
-                    go.transform.rotation = (Quaternion)transform.Rotation * Quaternion.Euler(0f, -90f, 0f);
+                    var go = Resources.InstanceIDToObject(instanceID) as GameObject;
+                    if (go != null)
+                    {
+                        _trackedArrows[instanceID] = go;
+                    }
                 }
             }).Run();
+
+        // Destroy GameObjects whose entities no longer exist
+        var toRemove = new System.Collections.Generic.List<int>();
+        foreach (var kvp in _trackedArrows)
+        {
+            if (!currentInstanceIDs.Contains(kvp.Key))
+            {
+                if (kvp.Value != null)
+                {
+                    Object.Destroy(kvp.Value);
+                }
+                toRemove.Add(kvp.Key);
+            }
+        }
+
+        // Clean up tracking dictionary
+        foreach (var id in toRemove)
+        {
+            _trackedArrows.Remove(id);
+        }
     }
 }
