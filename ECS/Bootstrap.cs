@@ -40,7 +40,6 @@ namespace CrystallineRTS.Bootstrap
             TryAddComponent<UnifiedUI_Diagnostics>(go);
             TryAddComponent<EntityViewManager>(go);
             TryAddComponent<BuilderCommandPanel>(go);
-            TryAddComponent<BarracksPanel>(go);
             TryAddComponent<TheWaningBorder.UI.ResourceHUD_IMGUI>(go);
 
             HumanFaction.GeneratePlayers(GameSettings.TotalPlayers); 
@@ -66,16 +65,6 @@ namespace CrystallineRTS.Bootstrap
 
                 return;
             }
-
-            // Look for TechTreeDBAuthoring in scene (might have been added manually)
-            var authoring = Object.FindObjectOfType<TechTreeDBAuthoring>();
-            if (authoring != null)
-            {
-
-                return;
-            }
-
-            // Auto-create TechTreeDB
 
             // Try multiple possible locations for the JSON file
             TextAsset json = null;

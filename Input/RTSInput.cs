@@ -46,7 +46,7 @@ public class RTSInput : MonoBehaviour
         }
 
         // 🛡️ Ignore input if mouse is over ANY panel this frame
-        if (BuilderCommandPanel.IsPointerOverPanel() || BarracksPanel.IsPointerOverPanel())
+        if (EntityActionPanel.IsPointerOver() || EntityInfoPanel.IsPointerOver())
         {
             _isDragging = false;
             return;
@@ -76,7 +76,7 @@ public class RTSInput : MonoBehaviour
     void HandleSelection()
     {
         // Safety: don't start/select while pointer is over ANY UI panel
-        if (BuilderCommandPanel.IsPointerOverPanel() || BarracksPanel.IsPointerOverPanel()) return;
+        if (EntityInfoPanel.IsPointerOver() || EntityActionPanel.IsPointerOver()) return;
 
         if (Input.GetMouseButtonDown(0))
         {
