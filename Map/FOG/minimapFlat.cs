@@ -438,13 +438,13 @@ public sealed class MinimapFlat : MonoBehaviour
             {
                 worldMin = cameraRig.worldMin;
                 worldMax = cameraRig.worldMax;
-                Debug.Log($"[Minimap] Found RTSCameraRig, synced bounds: ({worldMin.x},{worldMin.y}) to ({worldMax.x},{worldMax.y})");
+
             }
         }
         
         if (cameraRig == null)
         {
-            Debug.LogWarning("[Minimap] No RTSCameraRig found to move.");
+
             return;
         }
 
@@ -467,9 +467,7 @@ public sealed class MinimapFlat : MonoBehaviour
 
         if (logClicks) 
         {
-            Debug.Log($"[Minimap] Click UV({u:F2},{v:F2}) -> world ({targetX:F1},{targetZ:F1})");
-            Debug.Log($"[Minimap] World bounds: min({worldMin.x},{worldMin.y}) max({worldMax.x},{worldMax.y})");
-            Debug.Log($"[Minimap] Rig bounds: min({cameraRig.worldMin.x},{cameraRig.worldMin.y}) max({cameraRig.worldMax.x},{cameraRig.worldMax.y})");
+
         }
     }
 

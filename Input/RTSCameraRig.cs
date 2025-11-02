@@ -86,9 +86,7 @@ public class RTSCameraRig : MonoBehaviour
         
         _currentRotation = _targetRotation = transform.eulerAngles.y;
         _currentTilt = _targetTilt = _arm.localEulerAngles.x;
-        
-        Debug.Log($"[RTSCameraRig] Start - Rig pos: {transform.position}, Camera local: {_camTransform.localPosition}, Zoom: {_currentZoom}");
-        
+
         // Clamp to bounds
         ClampPositionToBounds(ref _targetPosition);
     }
@@ -147,8 +145,7 @@ public class RTSCameraRig : MonoBehaviour
             // This creates the "looking down at an angle" effect
             _camTransform.localPosition = new Vector3(0f, 0f, -40f);
             _camTransform.localRotation = Quaternion.identity;
-            
-            Debug.Log($"[RTSCameraRig] Initialized camera at world pos: {_camTransform.position}, local: {_camTransform.localPosition}");
+
         }
     }
 
@@ -325,7 +322,7 @@ public class RTSCameraRig : MonoBehaviour
         
         if (showDebugInfo)
         {
-            Debug.Log($"[RTSCameraRig] MoveToPosition called: target=({worldPos.x:F1}, {worldPos.z:F1}), clamped=({_targetPosition.x:F1}, {_targetPosition.z:F1})");
+
         }
     }
 

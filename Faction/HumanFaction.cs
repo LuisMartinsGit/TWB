@@ -50,7 +50,7 @@ namespace TheWaningBorder.Gameplay
             var world = World.DefaultGameObjectInjectionWorld;
             if (world == null || !world.IsCreated)
             {
-                Debug.LogError("[HumanFaction] Default world is not available.");
+
                 return;
             }
             GeneratePlayers(world.EntityManager, playerCount);
@@ -67,13 +67,9 @@ namespace TheWaningBorder.Gameplay
             // CRITICAL: Verify TechTreeDB is loaded
             if (TechTreeDB.Instance == null)
             {
-                Debug.LogError("[HumanFaction] TechTreeDB.Instance is NULL!");
-                Debug.LogError("[HumanFaction] Call TechTreeDB.Load() BEFORE GeneratePlayers()!");
-                Debug.LogError("[HumanFaction] Units will spawn with WRONG stats!");
+
                 return;
             }
-
-            Debug.Log($"[HumanFaction] TechTreeDB verified loaded. Spawning {playerCount} players...");
 
             // Get map bounds
             float minX = -125f, maxX = 125f, minZ = -125f, maxZ = 125f;
@@ -88,7 +84,7 @@ namespace TheWaningBorder.Gameplay
             var starts = SpawnPositioning.Generate(playerCount);
             if (starts == null || starts.Count == 0)
             {
-                Debug.LogWarning("[HumanFaction] SpawnPositioning failed, using fallback circle");
+
                 starts = FallbackCircle(playerCount, minX, maxX, minZ, maxZ);
             }
 
@@ -108,7 +104,6 @@ namespace TheWaningBorder.Gameplay
                 SpawnPlayerStart(em, pos, fac);
             }
 
-            Debug.Log($"[HumanFaction] Spawned {playerCount} human players with layout {GameSettings.SpawnLayout}");
         }
 
         // Fallback circle positioning if SpawnPositioning fails
@@ -130,12 +125,11 @@ namespace TheWaningBorder.Gameplay
 
         /// <summary>
         /// Spawn one player's starting setup: Hall + army with proper stats.
-        /// Army composition: 11 swordsmen, 12 archers, 1 builder.
+        /// Army composition: 200 archers, 1 builder.
         /// All units get stats from TechTreeDB.
         /// </summary>
         static void SpawnPlayerStart(EntityManager em, float3 spawnPos, Faction fac)
         {
-            Debug.Log($"[HumanFaction] Spawning player at {spawnPos} for faction {fac}");
 
             // 1) Hall (Era 1 capital)
             Hall.Create(em, spawnPos, fac);
@@ -144,15 +138,15 @@ namespace TheWaningBorder.Gameplay
             // Army spawns slightly offset from Hall
             var armySpawnPos = spawnPos + new float3(8, 0, 8);
             
+            // FIXED: Spawn 200 archers per player
             SpawnArmyWithStats(em, armySpawnPos, fac, 
-                swordsmenCount: 150, 
-                archersCount: 120);
+                swordsmenCount: 0, 
+                archersCount: 200);
 
             // 3) Spawn builder separately (off to the side)
             var builderPos = spawnPos + new float3(-5, 0, 5);
             CreateBuilderWithStats(em, builderPos, fac);
 
-            Debug.Log($"[HumanFaction] Player faction {fac} spawned successfully!");
         }
 
         /// <summary>
@@ -182,7 +176,7 @@ namespace TheWaningBorder.Gameplay
             int unitIndex = 0;
             
             // Spawn swordsmen (front ranks)
-            for (int i = 0; i < swordsmenCount && unitIndex < totalUnits; i++)
+            for (int i = 0; i < swordsmenCount; i++)
             {
                 int row = unitIndex / cols;
                 int col = unitIndex % cols;
@@ -193,7 +187,7 @@ namespace TheWaningBorder.Gameplay
             }
             
             // Spawn archers (back ranks)
-            for (int i = 0; i < archersCount && unitIndex < totalUnits; i++)
+            for (int i = 0; i < archersCount; i++)
             {
                 int row = unitIndex / cols;
                 int col = unitIndex % cols;
@@ -233,16 +227,17 @@ namespace TheWaningBorder.Gameplay
             em.SetComponentData(unit, new AttackCooldown { Cooldown = 1.5f, Timer = 0f });
 
             // Apply stats from TechTreeDB
-            if (TechTreeDB.Instance.TryGetUnit("Swordsman", out var udef))
+            if (TechTreeDB.Instance != null && TechTreeDB.Instance.TryGetUnit("Swordsman", out var udef))
             {
                 em.SetComponentData(unit, new Health { Value = (int)udef.hp, Max = (int)udef.hp });
                 em.SetComponentData(unit, new MoveSpeed { Value = udef.speed });
                 em.SetComponentData(unit, new Damage { Value = (int)udef.damage });
                 em.SetComponentData(unit, new LineOfSight { Radius = udef.lineOfSight });
+
             }
             else
             {
-                Debug.LogError("[HumanFaction] Failed to get Swordsman stats from TechTreeDB!");
+
             }
         }
 
@@ -277,7 +272,7 @@ namespace TheWaningBorder.Gameplay
             em.SetComponentData(unit, new AttackCooldown { Cooldown = 1.5f, Timer = 0f });
 
             // Apply stats from TechTreeDB
-            if (TechTreeDB.Instance.TryGetUnit("Archer", out var udef))
+            if (TechTreeDB.Instance != null && TechTreeDB.Instance.TryGetUnit("Archer", out var udef))
             {
                 em.SetComponentData(unit, new Health { Value = (int)udef.hp, Max = (int)udef.hp });
                 em.SetComponentData(unit, new MoveSpeed { Value = udef.speed });
@@ -297,10 +292,11 @@ namespace TheWaningBorder.Gameplay
                     IsRetreating = 0,
                     IsFiring = 0
                 });
+
             }
             else
             {
-                Debug.LogError("[HumanFaction] Failed to get Archer stats from TechTreeDB!");
+
             }
         }
 
@@ -309,22 +305,15 @@ namespace TheWaningBorder.Gameplay
         /// </summary>
         static void CreateBuilderWithStats(EntityManager em, float3 pos, Faction faction)
         {
-            // If you have Builder stats in TechTreeDB, load them
-            // Otherwise use basic stats for now
             var unit = Builder.Create(em, pos, faction);
             
-            // Apply stats if Builder exists in TechTreeDB
-            if (TechTreeDB.Instance != null && TechTreeDB.Instance.TryGetUnit("Builder", out var udef))
+            if (TechTreeDB.Instance != null && 
+                TechTreeDB.Instance.TryGetUnit("Builder", out var udef))
             {
                 em.SetComponentData(unit, new Health { Value = (int)udef.hp, Max = (int)udef.hp });
                 em.SetComponentData(unit, new MoveSpeed { Value = udef.speed });
                 em.SetComponentData(unit, new LineOfSight { Radius = udef.lineOfSight });
-                
-                // Ensure Radius component
-                if (!em.HasComponent<Radius>(unit))
-                {
-                    em.AddComponentData(unit, new Radius { Value = 0.5f });
-                }
+                em.SetComponentData(unit, new Radius { Value = 0.5f });
             }
         }
     }

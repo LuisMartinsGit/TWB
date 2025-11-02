@@ -127,8 +127,6 @@ public class FogOfWarManager : MonoBehaviour
             PushHumanTexture();
         }
 
-
-
     /// <summary>Ensures FogMaterial, FogRenderer and shader params are bound to _tex.</summary>
     void EnsureMaterialBound()
     {

@@ -70,8 +70,7 @@ public static class InitialArmySpawner
             
             unitIndex++;
         }
-        
-        Debug.Log($"InitialArmySpawner: Created {swordsmenCount} swordsmen and {archersCount} archers for faction {faction}");
+
     }
     
     /// <summary>
@@ -81,13 +80,13 @@ public static class InitialArmySpawner
     {
         if (TechTreeDB.Instance == null)
         {
-            Debug.LogWarning($"InitialArmySpawner: TechTreeDB.Instance is NULL! Unit {unitId} will have placeholder stats.");
+
             return;
         }
 
         if (!TechTreeDB.Instance.TryGetUnit(unitId, out var udef))
         {
-            Debug.LogWarning($"InitialArmySpawner: Unit '{unitId}' not found in TechTreeDB! Using placeholder stats.");
+
             return;
         }
 
@@ -112,7 +111,7 @@ public static class InitialArmySpawner
         {
             if (!em.HasComponent<ArcherState>(unit))
             {
-                Debug.LogWarning($"InitialArmySpawner: Archer unit missing ArcherState component!");
+
                 return;
             }
             
@@ -131,8 +130,7 @@ public static class InitialArmySpawner
             
             em.SetComponentData(unit, archerState);
         }
-        
-        Debug.Log($"InitialArmySpawner: Applied stats to {unitId} - HP:{udef.hp}, Speed:{udef.speed}, Damage:{udef.damage}, LOS:{udef.lineOfSight}");
+
     }
     public static void SpawnTestArmy(EntityManager em, float3 position, Faction faction)
     {

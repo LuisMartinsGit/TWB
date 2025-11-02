@@ -37,13 +37,12 @@ namespace TheWaningBorder.UI
         private bool _stylesBuilt = false;
         private Rect _debugRect = new Rect(20, 60, 430, 300);
 
-
         private void Awake()
         {
             _world = World.DefaultGameObjectInjectionWorld;
             if (_world == null)
             {
-                Debug.LogWarning("[ResourceHUD] No default world found.");
+
                 return;
             }
 
@@ -86,7 +85,6 @@ namespace TheWaningBorder.UI
             for (int i = 0; i < ents.Length; i++)
                 _cache[tags[i].Value] = banks[i];
         }
-
 
         private void OnGUI()
         {

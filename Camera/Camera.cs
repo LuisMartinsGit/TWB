@@ -63,14 +63,13 @@ namespace TheWaningBorder.GameCamera
                     rig.worldMin = fow.WorldMin;
                     rig.worldMax = fow.WorldMax;
                 }
-                
-                Debug.Log("[GameCamera] Created RTSCameraRig for modern RTS camera controls");
+
             }
             else if (existingRig.mainCamera == null)
             {
                 // Rig exists but doesn't have camera reference
                 existingRig.mainCamera = cam;
-                Debug.Log("[GameCamera] Connected existing RTSCameraRig to camera");
+
             }
         }
     }

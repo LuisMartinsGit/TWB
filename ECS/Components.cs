@@ -177,7 +177,6 @@ public struct ArmorRating : IComponentData
     public float Value; // e.g., 0..100+
 }
 
-
 // ===== Strategy layer =====
 public struct AIStrategyBudget : IComponentData {
     // Fractions sum ~1.0 (soft)
@@ -235,7 +234,6 @@ public struct ExploreFrontier : IBufferElementData
     public float3 WorldPos;
     public float Score; // higher = more attractive
 }
-
 
 public enum CrystalSubNodeType : byte
 {
@@ -325,7 +323,6 @@ public struct LineOfSight : IComponentData
 public struct GathererHutTag : IComponentData { }
 public struct HutTag : IComponentData { }
 
-
 public struct TempleTag : IComponentData { }
 
 public struct VaultTag : IComponentData { }
@@ -351,7 +348,6 @@ public struct SuppliesIncome : IComponentData
     public int PerMinute; // e.g., 180
 }
 
-
 public struct BarracksTag : IComponentData {}
 
 public struct TrainingState : IComponentData
@@ -359,7 +355,6 @@ public struct TrainingState : IComponentData
     public byte Busy;       // 0/1
     public float Remaining; // seconds
 }
-
 
 public struct TrainQueueItem : IBufferElementData
 {

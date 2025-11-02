@@ -39,7 +39,7 @@ public class GroundTexture : MonoBehaviour
             if (sh == null) sh = Shader.Find("Standard");
             if (sh == null)
             {
-                Debug.LogWarning("GroundTexture: No suitable shader found. Skipping.");
+
                 return;
             }
             matToUse = new Material(sh);

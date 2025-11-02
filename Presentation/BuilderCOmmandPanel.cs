@@ -6,7 +6,6 @@ using TheWaningBorder.Humans;         // (we keep using your GatherersHut factor
                                       // but this file can spawn others directly too
 using TheWaningBorder.Economy;
 
-
 public class BuilderCommandPanel : MonoBehaviour
 {
     // ======= Shared state used by RTSInput =======
@@ -195,9 +194,7 @@ public class BuilderCommandPanel : MonoBehaviour
 
         // we need the faction to price against
 
-
         GUILayout.EndHorizontal();
-
 
         GUI.enabled = true;
 
@@ -250,7 +247,6 @@ public class BuilderCommandPanel : MonoBehaviour
         GUILayout.EndVertical();
     }
 
-
     void StartPlacement()
     {
         if (IsPlacingBuilding) return;
@@ -258,7 +254,7 @@ public class BuilderCommandPanel : MonoBehaviour
         var preview = GetPreviewFor(_currentBuild);
         if (preview == null)
         {
-            Debug.LogWarning($"[BuilderMenu] No preview prefab for '{_currentBuild}'.");
+
             return;
         }
 
@@ -278,7 +274,7 @@ public class BuilderCommandPanel : MonoBehaviour
             _placingInstance.transform.position = p + Vector3.up * yOffset;
 
         IsPlacingBuilding = true;
-        Debug.Log($"[BuilderMenu] Placement started: {_currentBuild}");
+
     }
 
     GameObject GetPreviewFor(BuildType t)
@@ -308,7 +304,7 @@ public class BuilderCommandPanel : MonoBehaviour
 
         if (!FactionEconomy.Spend(_em, fac, cost))
         {
-            Debug.LogWarning($"[BuilderMenu] Not enough resources for {_currentBuild}. Needed: {CostText(cost)}");
+
             return;
         }
 
@@ -366,7 +362,6 @@ public class BuilderCommandPanel : MonoBehaviour
                 break;
         }
 
-        Debug.Log($"[BuilderMenu] Spawned {_currentBuild} at {pos}.");
     }
 
     // Generic spawner that reads TechTreeDB if available; else uses provided defaults

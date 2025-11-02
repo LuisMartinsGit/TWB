@@ -20,27 +20,22 @@ public static class InitialArmyBootstrap
         // CRITICAL: Verify TechTreeDB is loaded
         if (TechTreeDB.Instance == null)
         {
-            Debug.LogError("InitialArmyBootstrap: TechTreeDB.Instance is NULL! Call TechTreeDB.Load() first!");
-            Debug.LogError("InitialArmyBootstrap: Units will NOT spawn correctly!");
+
             return;
         }
 
         // Verify unit definitions exist
         if (!TechTreeDB.Instance.TryGetUnit("Swordsman", out var swordsman))
         {
-            Debug.LogError("InitialArmyBootstrap: Swordsman not found in TechTreeDB!");
+
             return;
         }
 
         if (!TechTreeDB.Instance.TryGetUnit("Archer", out var archer))
         {
-            Debug.LogError("InitialArmyBootstrap: Archer not found in TechTreeDB!");
+
             return;
         }
-
-        Debug.Log($"InitialArmyBootstrap: TechTreeDB loaded successfully!");
-        Debug.Log($"  Swordsman stats: HP={swordsman.hp}, Speed={swordsman.speed}, Damage={swordsman.damage}, LOS={swordsman.lineOfSight}");
-        Debug.Log($"  Archer stats: HP={archer.hp}, Speed={archer.speed}, Damage={archer.damage}, LOS={archer.lineOfSight}");
 
         // Get spawn positions from your game's spawn system
         // Example: Spawn blue army at origin
@@ -52,7 +47,6 @@ public static class InitialArmyBootstrap
         var redSpawnPos = new float3(-10, 0, -10);
         SpawnArmyWithStats(em, redSpawnPos, Faction.Red, swordsmenCount: 11, archersCount: 12);
 
-        Debug.Log("InitialArmyBootstrap: Initial armies spawned successfully!");
     }
 
     private static void SpawnArmyWithStats(
@@ -132,12 +126,11 @@ public static class InitialArmyBootstrap
             em.SetComponentData(unit, new MoveSpeed { Value = udef.speed });
             em.SetComponentData(unit, new Damage { Value = (int)udef.damage });
             em.SetComponentData(unit, new LineOfSight { Radius = udef.lineOfSight });
-            
-            Debug.Log($"Swordsman created: HP={udef.hp}, Speed={udef.speed}, Damage={udef.damage}, LOS={udef.lineOfSight}");
+
         }
         else
         {
-            Debug.LogError("Failed to get Swordsman stats from TechTreeDB!");
+
         }
     }
 
@@ -189,12 +182,11 @@ public static class InitialArmyBootstrap
                 IsRetreating = 0,
                 IsFiring = 0
             });
-            
-            Debug.Log($"Archer created: HP={udef.hp}, Speed={udef.speed}, Damage={udef.damage}, LOS={udef.lineOfSight}, MinRange={udef.minAttackRange}, MaxRange={udef.attackRange}");
+
         }
         else
         {
-            Debug.LogError("Failed to get Archer stats from TechTreeDB!");
+
         }
     }
 }

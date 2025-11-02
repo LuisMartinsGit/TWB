@@ -37,13 +37,6 @@ public partial class FogOfWarSystem : SystemBase
             stamped++;
         }
 
-        if (!s_logged)
-        {
-            s_logged = true;
-            Debug.Log($"[FogOfWarSystem] LoS sources found: {ents.Length}, stamped: {stamped}. Human faction: {mgr.HumanFaction}");
-            if (stamped == 0)
-                Debug.LogWarning("[FogOfWarSystem] No LoS sources stamped. Ensure units/bases/outposts have LineOfSight + FactionTag + LocalTransform.");
-        }
 
         ents.Dispose(); los.Dispose(); xfs.Dispose(); facs.Dispose();
 

@@ -28,21 +28,17 @@ public sealed class TechTreeDB : MonoBehaviour
             return;
         }
         Instance = this;
-        
-        Debug.Log("[TechTreeDB] Awake() - Instance set, waiting for Start()");
+
     }
 
     void Start()
     {
-        Debug.Log("[TechTreeDB] Start() - Beginning JSON parse");
-        
+
         if (humanTechJson == null || string.IsNullOrWhiteSpace(humanTechJson.text))
         {
-            Debug.LogError("[TechTreeDB] ✗ humanTechJson is NULL in Start()!");
+
             return;
         }
-
-        Debug.Log($"[TechTreeDB] ✓ humanTechJson assigned! Length: {humanTechJson.text.Length}");
 
         try
         {
@@ -58,11 +54,6 @@ public sealed class TechTreeDB : MonoBehaviour
             ParseUnit(json, "Miner");
             ParseUnit(json, "Litharch");
 
-            Debug.Log("╔══════════════════════════════════════════════════╗");
-            Debug.Log("║   TECHTREEDB LOADED - ALL STATS FROM JSON!       ║");
-            Debug.Log("╚══════════════════════════════════════════════════╝");
-            Debug.Log($"[TechTreeDB] Loaded {_buildingsById.Count} buildings and {_unitsById.Count} units");
-
             // Log loaded units with their actual stats
             foreach (var kvp in _unitsById)
             {
@@ -74,8 +65,7 @@ public sealed class TechTreeDB : MonoBehaviour
         }
         catch (Exception ex)
         {
-            Debug.LogError($"[TechTreeDB] Error: {ex.Message}");
-            Debug.LogError($"Stack: {ex.StackTrace}");
+
         }
     }
 
@@ -116,7 +106,7 @@ public sealed class TechTreeDB : MonoBehaviour
                 };
 
                 _buildingsById["Barracks"] = barracks;
-                Debug.Log($"[TechTreeDB] ✓ Barracks loaded with {trains.Count} trainable units");
+
             }
         }
     }
@@ -129,7 +119,7 @@ public sealed class TechTreeDB : MonoBehaviour
         
         if (unitIndex == -1)
         {
-            Debug.LogWarning($"[TechTreeDB] Could not find unit '{unitId}' in JSON");
+
             return;
         }
 
@@ -155,7 +145,7 @@ public sealed class TechTreeDB : MonoBehaviour
         
         if (objStart == -1 || objEnd == -1)
         {
-            Debug.LogWarning($"[TechTreeDB] Could not parse unit object for '{unitId}'");
+
             return;
         }
 
