@@ -1,8 +1,10 @@
-// UnifiedTrainingSystem.cs - WORKS FOR ALL BUILDINGS
-// Processes ANY building with TrainingState (Hall, Barracks, etc.)
-// NO LONGER requires BarracksTag
+// UnifiedTrainingSystem.cs - WITH POPULATION INTEGRATION (fixed)
+// - No SystemAPI.Query in static methods (EA0006)
+// - Correct ECB API: AddComponent(...) instead of AddComponentData(...)
+// - Minor robustness tweaks
 
 using Unity.Burst;
+using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
@@ -15,8 +17,6 @@ public partial struct UnifiedTrainingSystem : ISystem
     [BurstCompile]
     public void OnCreate(ref SystemState state)
     {
-        // CRITICAL FIX: Require TrainingState, NOT BarracksTag
-        // This makes the system work for Hall, Barracks, and any training building
         state.RequireForUpdate<TrainingState>();
     }
 
@@ -27,13 +27,14 @@ public partial struct UnifiedTrainingSystem : ISystem
         if (db == null) return;
 
         float dt = SystemAPI.Time.DeltaTime;
-        var ecb = new EntityCommandBuffer(Unity.Collections.Allocator.Temp);
+
+        // Use Temp (or TempJob if you playback on main thread same frame)
+        var ecb = new EntityCommandBuffer(Allocator.Temp);
 
         // Process ALL buildings with TrainingState (Hall, Barracks, etc.)
-        // NO BarracksTag requirement!
         foreach (var (ts, e) in SystemAPI
-                 .Query<RefRW<TrainingState>>()
-                 .WithEntityAccess())
+                     .Query<RefRW<TrainingState>>()
+                     .WithEntityAccess())
         {
             var queue = state.EntityManager.GetBuffer<TrainQueueItem>(e);
 
@@ -45,7 +46,7 @@ public partial struct UnifiedTrainingSystem : ISystem
                 var unitId = queue[0].UnitId.ToString();
                 if (!db.TryGetUnit(unitId, out var udef))
                 {
-                    queue.RemoveAt(0); // unknown; drop
+                    queue.RemoveAt(0);
                     UnityEngine.Debug.LogWarning($"Unknown unit ID in training queue: {unitId}");
                     continue;
                 }
@@ -53,26 +54,38 @@ public partial struct UnifiedTrainingSystem : ISystem
                 float t = udef.trainingTime > 0 ? udef.trainingTime : 1f;
                 ts.ValueRW.Busy = 1;
                 ts.ValueRW.Remaining = t;
-                
-                UnityEngine.Debug.Log($"Started training {unitId} (duration: {t}s)");
+                // Optionally log: UnityEngine.Debug.Log($"Started training {unitId} (duration: {t}s)");
             }
             else
             {
                 // Tick current
                 ts.ValueRW.Remaining -= dt;
-                if (ts.ValueRO.Remaining <= 0f)
+                if (ts.ValueRO.Remaining <= 0f && queue.Length > 0)
                 {
-                    // Finish → spawn 1st queued, then pop
+                    // Training complete - check population before spawning
                     var unitId = queue[0].UnitId.ToString();
-                    
-                    UnityEngine.Debug.Log($"Training complete! Spawning {unitId}");
-                    
-                    // SPAWN WITHOUT COST CHECK (cost was paid when queuing)
-                    SpawnUnit(ref state, ecb, e, unitId);
-                    
-                    queue.RemoveAt(0);
-                    ts.ValueRW.Busy = 0;
-                    ts.ValueRW.Remaining = 0f;
+
+                    var em = state.EntityManager;
+                    var fac = em.GetComponentData<FactionTag>(e).Value;
+                    int requiredPop = GetUnitPopulationCost(unitId);
+
+                    if (HasPopulationCapacity(ref state, fac, requiredPop))
+                    {
+                        // Enough population - spawn the unit
+                        SpawnUnit(ref state, ecb, e, unitId);
+
+                        queue.RemoveAt(0);
+                        ts.ValueRW.Busy = 0;
+                        ts.ValueRW.Remaining = 0f;
+                    }
+                    else
+                    {
+                        // Not enough population - pause; keep item in queue for retry later
+                        ts.ValueRW.Busy = 0;
+                        ts.ValueRW.Remaining = 0f;
+                        UnityEngine.Debug.LogWarning($"Cannot spawn {unitId}: Not enough population.");
+                        // TODO: Show UI notification to player
+                    }
                 }
             }
         }
@@ -82,42 +95,66 @@ public partial struct UnifiedTrainingSystem : ISystem
     }
 
     /// <summary>
-    /// Spawns a unit from its ID. Cost has already been paid when queuing.
+    /// Check if faction has enough population capacity.
+    /// NOTE: Must NOT be static if using SystemAPI.Query (EA0006).
     /// </summary>
-    static void SpawnUnit(ref SystemState state, EntityCommandBuffer ecb, Entity building, string unitId)
+    private bool HasPopulationCapacity(ref SystemState state, Faction faction, int requiredPop)
+    {
+        // Fast path using ComponentLookups is also possible, but this is clear and fine here.
+        foreach (var (tag, pop) in SystemAPI.Query<RefRO<FactionTag>, RefRO<FactionPopulation>>())
+        {
+            if (tag.ValueRO.Value == faction)
+            {
+                return (pop.ValueRO.Current + requiredPop) <= pop.ValueRO.Max;
+            }
+        }
+        // No population tracking found - allow by default (back-compat)
+        return true;
+    }
+
+    /// <summary>
+    /// Population cost for a unit type.
+    /// </summary>
+    private static int GetUnitPopulationCost(string unitId)
+    {
+        return unitId switch
+        {
+            "Builder"   => 1,
+            "Archer"    => 1,
+            "Swordsman" => 1,
+            "Miner"     => 1,
+            _           => 1 // Default
+        };
+    }
+
+    /// <summary>
+    /// Spawns a unit from its ID. Cost has already been paid when queuing.
+    /// Can remain static (doesn't use SystemAPI.Query).
+    /// </summary>
+    private static void SpawnUnit(ref SystemState state, EntityCommandBuffer ecb, Entity building, string unitId)
     {
         var em = state.EntityManager;
         var tr = em.GetComponentData<LocalTransform>(building);
         var fac = em.GetComponentData<FactionTag>(building).Value;
 
-        // Check if building has a rally point
+        // Determine spawn pos (rally if present)
         float3 spawnPos;
         if (em.HasComponent<RallyPoint>(building))
         {
             var rally = em.GetComponentData<RallyPoint>(building);
-            if (rally.Has != 0)
-            {
-                // Spawn at rally point
-                spawnPos = rally.Position;
-            }
-            else
-            {
-                // Default spawn position (in front of building)
-                spawnPos = tr.Position + new float3(1.6f, 0, 1.6f);
-            }
+            spawnPos = rally.Has != 0 ? rally.Position : tr.Position + new float3(1.6f, 0, 1.6f);
         }
         else
         {
-            // Default spawn position (in front of building)
             spawnPos = tr.Position + new float3(1.6f, 0, 1.6f);
         }
 
         // Find empty position near desired spawn point
-        float spawnRadius = 0.5f; // Default unit radius
+        float spawnRadius = 0.5f;
         float3 finalPos = SpawnPlacementHelper.FindEmptyPosition(
-            spawnPos, 
-            spawnRadius, 
-            em, 
+            spawnPos,
+            spawnRadius,
+            em,
             maxAttempts: 16
         );
 
@@ -138,41 +175,39 @@ public partial struct UnifiedTrainingSystem : ISystem
                 unit = TheWaningBorder.Humans.Miner.CreateWithECB(ecb, finalPos, fac);
                 break;
             default:
-                // Default to swordsman if unknown
                 unit = Swordsman.Create(ecb, finalPos, fac);
                 UnityEngine.Debug.LogWarning($"Unknown unit type: {unitId}, defaulting to Swordsman");
                 break;
         }
 
-        // Apply ALL stats from JSON
+        // Add PopulationCost with the correct ECB API
+        int popCost = GetUnitPopulationCost(unitId);
+        ecb.AddComponent(unit, new PopulationCost { Amount = popCost });
+
+        // Apply stats from TechTreeDB (SetComponent assumes these components exist on the created archetype)
         if (TechTreeDB.Instance != null &&
             TechTreeDB.Instance.TryGetUnit(unitId, out var udef))
         {
-            // Basic stats
-            ecb.SetComponent(unit, new Health { Value = (int)udef.hp, Max = (int)udef.hp });
-            ecb.SetComponent(unit, new MoveSpeed { Value = udef.speed });
-            ecb.SetComponent(unit, new Damage { Value = (int)udef.damage });
-            ecb.SetComponent(unit, new LineOfSight { Radius = udef.lineOfSight });
-            
-            // Set Radius for collision/spacing
-            ecb.SetComponent(unit, new Radius { Value = 0.5f }); // Standard unit radius
-            
-            // Archer-specific stats from JSON
+            ecb.SetComponent(unit, new Health     { Value = (int)udef.hp,   Max = (int)udef.hp });
+            ecb.SetComponent(unit, new MoveSpeed  { Value = udef.speed });
+            ecb.SetComponent(unit, new Damage     { Value = (int)udef.damage });
+            ecb.SetComponent(unit, new LineOfSight{ Radius = udef.lineOfSight });
+            ecb.SetComponent(unit, new Radius     { Value = 0.5f });
+
             if (unitId == "Archer")
             {
                 var archerState = new ArcherState
                 {
-                    CurrentTarget = Entity.Null,
-                    AimTimer = 0,
+                    CurrentTarget   = Entity.Null,
+                    AimTimer        = 0,
                     AimTimeRequired = 0.5f,
-                    CooldownTimer = 0,
-                    MinRange = udef.minAttackRange,
-                    MaxRange = udef.attackRange,
-                    HeightRangeMod = 4f,
-                    IsRetreating = 0,
-                    IsFiring = 0
+                    CooldownTimer   = 0,
+                    MinRange        = udef.minAttackRange,
+                    MaxRange        = udef.attackRange,
+                    HeightRangeMod  = 4f,
+                    IsRetreating    = 0,
+                    IsFiring        = 0
                 };
-                
                 ecb.SetComponent(unit, archerState);
             }
         }
@@ -183,9 +218,8 @@ public partial struct UnifiedTrainingSystem : ISystem
             var rally = em.GetComponentData<RallyPoint>(building);
             if (rally.Has != 0)
             {
-                // Give unit a move command to rally point
-                ecb.AddComponent(unit, new DesiredDestination 
-                { 
+                ecb.AddComponent(unit, new DesiredDestination
+                {
                     Position = rally.Position,
                     Has = 1
                 });
@@ -193,3 +227,11 @@ public partial struct UnifiedTrainingSystem : ISystem
         }
     }
 }
+
+/*
+ * INTEGRATION NOTES:
+ * - EA0006 fix: HasPopulationCapacity is now an instance method (not static) so it may use SystemAPI.Query.
+ * - ECB fix: use ecb.AddComponent(entity, component) instead of AddComponentData.
+ * - If your created unit archetypes DON'T already include components like Health/MoveSpeed/etc.,
+ *   switch those SetComponent calls to AddComponent for first-time add.
+ */

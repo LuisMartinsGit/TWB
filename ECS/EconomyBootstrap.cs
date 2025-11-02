@@ -1,4 +1,7 @@
-// File: Assets/Scripts/ECS/EconomyBootstrap.cs
+// EconomyBootstrap.cs (UPDATED VERSION)
+// Replace your existing EconomyBootstrap.cs with this version
+// Place in: Assets/Scripts/ECS/
+
 using Unity.Entities;
 using Unity.Mathematics;
 
@@ -6,7 +9,8 @@ public static class EconomyBootstrap
 {
     /// <summary>
     /// Ensure one resource bank entity per participating faction with the desired starting amounts.
-    /// supplies=400, iron=50, crystal=0, veilsteel=0, glow=0.
+    /// Starting resources: supplies=400, iron=150, crystal=0, veilsteel=0, glow=0
+    /// Starting population: current=0, max=0 (will increase as buildings are constructed)
     /// </summary>
     public static void EnsureFactionBanks(int totalPlayers)
     {
@@ -34,13 +38,17 @@ public static class EconomyBootstrap
             }
             if (exists) continue;
 
+            // Create faction resource bank with all resource tracking
             var bank = em.CreateEntity(
                 typeof(FactionTag),
                 typeof(FactionResources),
-                typeof(ResourceTickState)
+                typeof(ResourceTickState),
+                typeof(FactionPopulation)  // NEW: Add population tracking
             );
 
             em.SetComponentData(bank, new FactionTag { Value = fac });
+            
+            // Initialize material resources
             em.SetComponentData(bank, new FactionResources
             {
                 Supplies = 400,
@@ -50,7 +58,15 @@ public static class EconomyBootstrap
                 Glow = 0
             });
 
-            // Initialize so the first add happens on the next whole second boundary
+            // NEW: Initialize population
+            // Starts at 0/0 - will increase as Hall/Huts are built
+            em.SetComponentData(bank, new FactionPopulation
+            {
+                Current = 0,  // No units yet
+                Max = 0       // No population buildings yet
+            });
+
+            // Initialize resource tick tracking (for passive income)
             em.SetComponentData(bank, new ResourceTickState
             {
                 LastWholeSecond = (int)math.floor(world.Time.ElapsedTime)

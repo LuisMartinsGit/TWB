@@ -131,8 +131,12 @@ namespace TheWaningBorder.Gameplay
         static void SpawnPlayerStart(EntityManager em, float3 spawnPos, Faction fac)
         {
             // 1) Hall (Era 1 capital)
-            Hall.Create(em, spawnPos, fac);
-
+            var hall = Hall.Create(em, spawnPos, fac);
+            // NEW: Add population provider (20 population)
+            if (!em.HasComponent<PopulationProvider>(hall))
+            {
+                em.AddComponentData(hall, new PopulationProvider { Amount = 20 });
+            }
             // 2) Spawn army with proper stats and formation
             // Army spawns slightly offset from Hall
             var armySpawnPos = spawnPos + new float3(8, 0, 8);

@@ -370,3 +370,38 @@ public struct ArrowLanded : IComponentData
 {
     public float TimeLeft; // seconds
 }
+
+/// Population tracking for a faction. Current = used slots, Max = available slots (capped at 200).
+/// Add this to the faction's resource bank entity alongside FactionResources.
+/// </summary>
+public struct FactionPopulation : IComponentData
+{
+    /// <summary>How many population slots are currently used by units</summary>
+    public int Current;
+    
+    /// <summary>Maximum population available from buildings (capped at AbsoluteMax)</summary>
+    public int Max;
+    
+    /// <summary>Hard cap on population - cannot exceed this value</summary>
+    public const int AbsoluteMax = 200;
+}
+
+/// <summary>
+/// Attached to buildings that provide population capacity.
+/// Examples: Hut (10), Hall (20)
+/// </summary>
+public struct PopulationProvider : IComponentData
+{
+    /// <summary>How much population capacity this building provides when completed</summary>
+    public int Amount;
+}
+
+/// <summary>
+/// Attached to units that consume population slots.
+/// Most basic units consume 1 slot, larger units may consume more.
+/// </summary>
+public struct PopulationCost : IComponentData
+{
+    /// <summary>How many population slots this unit consumes</summary>
+    public int Amount;
+}

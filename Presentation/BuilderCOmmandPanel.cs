@@ -307,19 +307,23 @@ public class BuilderCommandPanel : MonoBehaviour
 
         if (!FactionEconomy.Spend(_em, fac, cost))
         {
-
             return;
         }
 
         switch (_currentBuild)
         {
             case BuildType.Hut:
-                // Use your existing factory (adds components & tags inside)
-                TheWaningBorder.Humans.Hut.Create(_em, pos, fac);
+                // Use your existing factory
+                var hut = TheWaningBorder.Humans.Hut.Create(_em, pos, fac);
+                // NEW: Add population provider (10 population)
+                if (!_em.HasComponent<PopulationProvider>(hut))
+                {
+                    _em.AddComponentData(hut, new PopulationProvider { Amount = 10 });
+                }
                 break;
 
             case BuildType.GatherersHut:
-                // Use your existing factory (adds components & tags inside)
+                // Use your existing factory (no population)
                 TheWaningBorder.Humans.GatherersHut.Create(_em, pos, fac);
                 break;
 
@@ -333,7 +337,7 @@ public class BuilderCommandPanel : MonoBehaviour
                         if (!_em.HasComponent<TrainingState>(e))
                             _em.AddComponentData(e, new TrainingState { Busy = 0, Remaining = 0 });
                         if (!_em.HasComponent<TrainQueueItem>(e))
-                            _em.AddBuffer<TrainQueueItem>(e); // empty queue
+                            _em.AddBuffer<TrainQueueItem>(e);
                     });
                 break;
 
@@ -358,13 +362,17 @@ public class BuilderCommandPanel : MonoBehaviour
                     addSpecificTag: (e) =>
                     {
                         // Mark as base so EntityViewManager can choose the culture capital model
-                        var bt = _em.HasComponent<BuildingTag>(e) ? _em.GetComponentData<BuildingTag>(e) : default;
+                        var bt = _em.HasComponent<BuildingTag>(e) 
+                            ? _em.GetComponentData<BuildingTag>(e) 
+                            : new BuildingTag();
                         bt.IsBase = 1;
-                        if (_em.HasComponent<BuildingTag>(e)) _em.SetComponentData(e, bt);
+                        if (!_em.HasComponent<BuildingTag>(e))
+                            _em.AddComponentData(e, bt);
+                        else
+                            _em.SetComponentData(e, bt);
                     });
                 break;
         }
-
     }
 
     // Generic spawner that reads TechTreeDB if available; else uses provided defaults
