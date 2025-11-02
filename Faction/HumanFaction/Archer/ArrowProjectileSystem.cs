@@ -5,24 +5,21 @@ using Unity.Mathematics;
 using Unity.Transforms;
 
 /// <summary>
-/// Arrow projectile system with HOMING behavior - arrows track and always hit their targets
-/// Arrows follow targets and guarantee hits (no accuracy system)
+/// Arrow projectile system with ARCHED trajectories that GUARANTEE hits
+/// Uses parametric curves - arrows follow a beautiful arc but always reach their target
 /// </summary>
 [BurstCompile]
 [UpdateInGroup(typeof(SimulationSystemGroup))]
 [UpdateAfter(typeof(UnifiedCombatSystem))]
 public partial struct ArrowProjectileSystem : ISystem
 {
-    // Maximum lifetime before despawn (2 seconds)
-    private const float MaxArrowLifetime = 2.0f;
-    
-    // Homing parameters
-    private const float ArrowSpeed = 30f;          // Arrow travel speed
-    private const float HomingStrength = 8f;       // How aggressively arrows track (radians/sec)
+    // Flight parameters
+    private const float FlightDuration = 0.8f;     // How long arrows take to reach target (seconds)
+    private const float ArcHeight = 3f;            // Height of arc above midpoint (adjustable for visual effect)
     private const float HitRadius = 0.8f;          // Distance to register a hit
     
-    // Maximum pitch angle in radians (45 degrees) - for visual only
-    private const float MaxPitchAngle = 0.785398f;
+    // Maximum pitch angle in radians (60 degrees) - arrows can point more steeply now
+    private const float MaxPitchAngle = 1.047f;
 
     [BurstCompile]
     public void OnCreate(ref SystemState state)
@@ -39,34 +36,37 @@ public partial struct ArrowProjectileSystem : ISystem
         var time = SystemAPI.Time.ElapsedTime;
         var em = state.EntityManager;
 
-        // Move and update arrows with HOMING behavior
+        // Move and update arrows with ARCHED trajectory
         foreach (var (transform, arrow, projectile, entity) 
                  in SystemAPI.Query<RefRW<LocalTransform>, RefRW<ArrowProjectile>, RefRW<Projectile>>()
                  .WithEntityAccess())
         {
             ref var trans = ref transform.ValueRW;
             ref var arr = ref arrow.ValueRW;
-            ref var proj = ref projectile.ValueRW;
+            ref readonly var proj = ref projectile.ValueRO;
             
             var arrowPos = trans.Position;
             var shouldDestroy = false;
             
             // Calculate elapsed time since spawn
-            var elapsed = (float)(time - projectile.ValueRO.StartTime);
+            var elapsed = (float)(time - proj.StartTime);
             
-            // DESPAWN AFTER 2 SECONDS (safety check)
-            if (elapsed > MaxArrowLifetime)
+            // Calculate progress through flight (0 to 1)
+            float t = elapsed / FlightDuration;
+            
+            // SAFETY: Despawn if arrow takes too long
+            if (t > 1.5f) // 150% of expected flight time
             {
                 shouldDestroy = true;
             }
             else
             {
-                // HOMING BEHAVIOR - Track the target
-                float3 targetPos = proj.End; // Default to original target position
+                // Get target position (update if target moved)
+                float3 targetPos = proj.End;
                 Entity targetEntity = proj.Target;
                 bool targetIsAlive = false;
                 
-                // Check if target still exists and is alive
+                // Track moving targets
                 if (targetEntity != Entity.Null && em.Exists(targetEntity))
                 {
                     if (em.HasComponent<Health>(targetEntity))
@@ -80,18 +80,16 @@ public partial struct ArrowProjectileSystem : ISystem
                             {
                                 var targetTransform = em.GetComponentData<LocalTransform>(targetEntity);
                                 targetPos = targetTransform.Position;
-                                proj.End = targetPos; // Update stored target position
                             }
                         }
                     }
                 }
                 
-                // Calculate direction to target
-                float3 toTarget = targetPos - arrowPos;
-                float distToTarget = math.length(toTarget);
+                // Calculate distance to target
+                float distToTarget = math.length(targetPos - arrowPos);
                 
                 // Check if we hit the target
-                if (distToTarget < HitRadius)
+                if (t >= 0.95f || distToTarget < HitRadius) // Hit if very close OR near end of flight
                 {
                     // GUARANTEED HIT - Apply damage
                     if (targetIsAlive && targetEntity != Entity.Null && em.Exists(targetEntity))
@@ -113,24 +111,46 @@ public partial struct ArrowProjectileSystem : ISystem
                 }
                 else
                 {
-                    // HOMING - Steer towards target
-                    float3 desiredDirection = math.normalize(toTarget);
-                    float3 currentDirection = math.normalize(arr.Velocity);
+                    // ARCHED TRAJECTORY - Calculate position along parabolic curve
+                    float3 startPos = proj.Start + new float3(0, 1.5f, 0); // Archer height
                     
-                    // Smoothly interpolate direction (homing behavior)
-                    float3 newDirection = math.normalize(math.lerp(currentDirection, desiredDirection, HomingStrength * dt));
+                    // Calculate control point for parabolic arc
+                    float3 midpoint = (startPos + targetPos) * 0.5f;
                     
-                    // Set velocity with constant speed
-                    arr.Velocity = newDirection * ArrowSpeed;
+                    // Arc height scales with distance (longer shots = higher arc)
+                    float horizontalDist = math.length(targetPos - startPos);
+                    float arcHeight = ArcHeight * math.min(1f, horizontalDist / 15f); // Cap at 15 units
                     
-                    // Move arrow
-                    trans.Position = arrowPos + arr.Velocity * dt;
+                    float3 controlPoint = midpoint + new float3(0, arcHeight, 0);
                     
-                    // Update rotation to point in direction of travel
-                    if (math.lengthsq(arr.Velocity) > 0.001f)
+                    // Quadratic Bezier curve: B(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2
+                    // P0 = start, P1 = control point (above midpoint), P2 = target
+                    float oneMinusT = 1f - t;
+                    float3 newPosition = 
+                        oneMinusT * oneMinusT * startPos +
+                        2f * oneMinusT * t * controlPoint +
+                        t * t * targetPos;
+                    
+                    // Calculate velocity direction from derivative of bezier curve
+                    // B'(t) = 2(1-t)(P1-P0) + 2t(P2-P1)
+                    float3 velocity = 
+                        2f * oneMinusT * (controlPoint - startPos) +
+                        2f * t * (targetPos - controlPoint);
+                    
+                    // Normalize and scale velocity for smooth motion
+                    velocity = math.normalize(velocity) * (horizontalDist / FlightDuration);
+                    
+                    // Update arrow position
+                    trans.Position = newPosition;
+                    
+                    // Update rotation to point along velocity vector
+                    if (math.lengthsq(velocity) > 0.001f)
                     {
-                        trans.Rotation = CalculateRealisticArrowRotation(arr.Velocity);
+                        trans.Rotation = CalculateArrowRotation(velocity);
                     }
+                    
+                    // Store velocity in arrow component (for visual effects if needed)
+                    arr.Velocity = velocity;
                 }
             }
             
@@ -143,19 +163,27 @@ public partial struct ArrowProjectileSystem : ISystem
     }
 
     /// <summary>
-    /// Calculate realistic arrow rotation with clamped pitch angle
+    /// Calculate arrow rotation pointing along velocity vector
+    /// Allows full range of pitch angles for realistic arcing
     /// </summary>
     [BurstCompile]
-    private static quaternion CalculateRealisticArrowRotation(float3 velocity)
+    private static quaternion CalculateArrowRotation(float3 velocity)
     {
         // Get horizontal direction and speed
         float3 horizontalDir = math.normalize(new float3(velocity.x, 0, velocity.z));
         float horizontalSpeed = math.length(new float2(velocity.x, velocity.z));
         
-        // Calculate pitch angle from velocity
-        float pitchAngle = -math.atan2(velocity.y, horizontalSpeed);
+        // Prevent division by zero
+        if (horizontalSpeed < 0.001f)
+        {
+            // Pointing straight up or down
+            return quaternion.LookRotation(new float3(0, 0, 1), math.up());
+        }
         
-        // Clamp pitch to realistic range (-45° to +45°)
+        // Calculate pitch angle from velocity
+        float pitchAngle = math.atan2(velocity.y, horizontalSpeed);
+        
+        // Clamp pitch to realistic range for arrows
         pitchAngle = math.clamp(pitchAngle, -MaxPitchAngle, MaxPitchAngle);
         
         // Get yaw from horizontal direction
@@ -163,7 +191,7 @@ public partial struct ArrowProjectileSystem : ISystem
         
         // Construct rotation: First rotate around Y (yaw), then around local X (pitch)
         quaternion yawRotation = quaternion.RotateY(yaw);
-        quaternion pitchRotation = quaternion.RotateX(pitchAngle);
+        quaternion pitchRotation = quaternion.RotateX(-pitchAngle); // Negative for correct orientation
         
         return math.mul(yawRotation, pitchRotation);
     }

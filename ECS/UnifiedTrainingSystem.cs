@@ -1,22 +1,26 @@
-// BarracksTrainingSystem.cs - WITH ECONOMY INTEGRATION
-// Deducts unit costs from faction resources when spawning units
-// Replace your BarracksTrainingSystem.cs with this
+// UnifiedTrainingSystem.cs - WORKS FOR ALL BUILDINGS
+// Processes ANY building with TrainingState (Hall, Barracks, etc.)
+// NO LONGER requires BarracksTag
 
 using Unity.Burst;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
 using TheWaningBorder.Humans;
-using TheWaningBorder.Economy;
 
 [BurstCompile]
-public partial struct BarracksTrainingSystem : ISystem
+[UpdateInGroup(typeof(SimulationSystemGroup))]
+public partial struct UnifiedTrainingSystem : ISystem
 {
+    [BurstCompile]
     public void OnCreate(ref SystemState state)
     {
-        state.RequireForUpdate<BarracksTag>();
+        // CRITICAL FIX: Require TrainingState, NOT BarracksTag
+        // This makes the system work for Hall, Barracks, and any training building
+        state.RequireForUpdate<TrainingState>();
     }
 
+    [BurstCompile]
     public void OnUpdate(ref SystemState state)
     {
         var db = TechTreeDB.Instance;
@@ -25,9 +29,10 @@ public partial struct BarracksTrainingSystem : ISystem
         float dt = SystemAPI.Time.DeltaTime;
         var ecb = new EntityCommandBuffer(Unity.Collections.Allocator.Temp);
 
+        // Process ALL buildings with TrainingState (Hall, Barracks, etc.)
+        // NO BarracksTag requirement!
         foreach (var (ts, e) in SystemAPI
                  .Query<RefRW<TrainingState>>()
-                 .WithAll<BarracksTag>()
                  .WithEntityAccess())
         {
             var queue = state.EntityManager.GetBuffer<TrainQueueItem>(e);
@@ -41,12 +46,15 @@ public partial struct BarracksTrainingSystem : ISystem
                 if (!db.TryGetUnit(unitId, out var udef))
                 {
                     queue.RemoveAt(0); // unknown; drop
+                    UnityEngine.Debug.LogWarning($"Unknown unit ID in training queue: {unitId}");
                     continue;
                 }
 
                 float t = udef.trainingTime > 0 ? udef.trainingTime : 1f;
                 ts.ValueRW.Busy = 1;
                 ts.ValueRW.Remaining = t;
+                
+                UnityEngine.Debug.Log($"Started training {unitId} (duration: {t}s)");
             }
             else
             {
@@ -57,25 +65,14 @@ public partial struct BarracksTrainingSystem : ISystem
                     // Finish → spawn 1st queued, then pop
                     var unitId = queue[0].UnitId.ToString();
                     
-                    // CRITICAL FIX: Deduct cost before spawning
-                    if (TrySpawnWithCost(ref state, ecb, e, unitId))
-                    {
-                        // Successfully spawned and paid
-                        queue.RemoveAt(0);
-                        ts.ValueRW.Busy = 0;
-                        ts.ValueRW.Remaining = 0f;
-                    }
-                    else
-                    {
-                        // Can't afford - cancel training
-                        // Note: In a real game, you might want to pause instead of cancel
-                        queue.RemoveAt(0);
-                        ts.ValueRW.Busy = 0;
-                        ts.ValueRW.Remaining = 0f;
-                        
-                        // Optional: Log warning for debugging
-                        UnityEngine.Debug.LogWarning($"Cannot afford to train {unitId} - training cancelled");
-                    }
+                    UnityEngine.Debug.Log($"Training complete! Spawning {unitId}");
+                    
+                    // SPAWN WITHOUT COST CHECK (cost was paid when queuing)
+                    SpawnUnit(ref state, ecb, e, unitId);
+                    
+                    queue.RemoveAt(0);
+                    ts.ValueRW.Busy = 0;
+                    ts.ValueRW.Remaining = 0f;
                 }
             }
         }
@@ -85,36 +82,19 @@ public partial struct BarracksTrainingSystem : ISystem
     }
 
     /// <summary>
-    /// Attempts to spawn a unit, deducting its cost from the faction's economy.
-    /// Returns true if successful, false if the faction cannot afford it.
+    /// Spawns a unit from its ID. Cost has already been paid when queuing.
     /// </summary>
-    static bool TrySpawnWithCost(ref SystemState state, EntityCommandBuffer ecb, Entity barracks, string unitId)
+    static void SpawnUnit(ref SystemState state, EntityCommandBuffer ecb, Entity building, string unitId)
     {
         var em = state.EntityManager;
-        var fac = em.GetComponentData<FactionTag>(barracks).Value;
-        
-        // Get unit cost from TechTreeDB
-        if (!TechTreeDB.Instance.TryGetUnit(unitId, out var udef))
-            return false;
-        
-        // Convert unit cost to Cost structure
-        Cost unitCost = udef.cost.ToCost();
-        
-        // CRITICAL: Deduct cost from faction economy
-        if (!FactionEconomy.Spend(em, fac, unitCost))
-        {
-            // Cannot afford this unit
-            return false;
-        }
-        
-        // Cost paid successfully - now spawn the unit
-        var tr = em.GetComponentData<LocalTransform>(barracks);
+        var tr = em.GetComponentData<LocalTransform>(building);
+        var fac = em.GetComponentData<FactionTag>(building).Value;
 
-        // Check if barracks has a rally point
+        // Check if building has a rally point
         float3 spawnPos;
-        if (em.HasComponent<RallyPoint>(barracks))
+        if (em.HasComponent<RallyPoint>(building))
         {
-            var rally = em.GetComponentData<RallyPoint>(barracks);
+            var rally = em.GetComponentData<RallyPoint>(building);
             if (rally.Has != 0)
             {
                 // Spawn at rally point
@@ -122,13 +102,13 @@ public partial struct BarracksTrainingSystem : ISystem
             }
             else
             {
-                // Default spawn position (in front of barracks)
+                // Default spawn position (in front of building)
                 spawnPos = tr.Position + new float3(1.6f, 0, 1.6f);
             }
         }
         else
         {
-            // Default spawn position (in front of barracks)
+            // Default spawn position (in front of building)
             spawnPos = tr.Position + new float3(1.6f, 0, 1.6f);
         }
 
@@ -141,6 +121,7 @@ public partial struct BarracksTrainingSystem : ISystem
             maxAttempts: 16
         );
 
+        // Create unit based on type
         Entity unit;
         switch (unitId)
         {
@@ -150,20 +131,28 @@ public partial struct BarracksTrainingSystem : ISystem
             case "Archer":
                 unit = Archer.Create(ecb, finalPos, fac);
                 break;
+            case "Builder":
+                unit = TheWaningBorder.Humans.Builder.CreateWithECB(ecb, finalPos, fac);
+                break;
+            case "Miner":
+                unit = TheWaningBorder.Humans.Miner.CreateWithECB(ecb, finalPos, fac);
+                break;
             default:
+                // Default to swordsman if unknown
                 unit = Swordsman.Create(ecb, finalPos, fac);
+                UnityEngine.Debug.LogWarning($"Unknown unit type: {unitId}, defaulting to Swordsman");
                 break;
         }
 
         // Apply ALL stats from JSON
         if (TechTreeDB.Instance != null &&
-            TechTreeDB.Instance.TryGetUnit(unitId, out var udefStats))
+            TechTreeDB.Instance.TryGetUnit(unitId, out var udef))
         {
             // Basic stats
-            ecb.SetComponent(unit, new Health { Value = (int)udefStats.hp, Max = (int)udefStats.hp });
-            ecb.SetComponent(unit, new MoveSpeed { Value = udefStats.speed });
-            ecb.SetComponent(unit, new Damage { Value = (int)udefStats.damage });
-            ecb.SetComponent(unit, new LineOfSight { Radius = udefStats.lineOfSight });
+            ecb.SetComponent(unit, new Health { Value = (int)udef.hp, Max = (int)udef.hp });
+            ecb.SetComponent(unit, new MoveSpeed { Value = udef.speed });
+            ecb.SetComponent(unit, new Damage { Value = (int)udef.damage });
+            ecb.SetComponent(unit, new LineOfSight { Radius = udef.lineOfSight });
             
             // Set Radius for collision/spacing
             ecb.SetComponent(unit, new Radius { Value = 0.5f }); // Standard unit radius
@@ -177,8 +166,8 @@ public partial struct BarracksTrainingSystem : ISystem
                     AimTimer = 0,
                     AimTimeRequired = 0.5f,
                     CooldownTimer = 0,
-                    MinRange = udefStats.minAttackRange,
-                    MaxRange = udefStats.attackRange,
+                    MinRange = udef.minAttackRange,
+                    MaxRange = udef.attackRange,
                     HeightRangeMod = 4f,
                     IsRetreating = 0,
                     IsFiring = 0
@@ -188,10 +177,10 @@ public partial struct BarracksTrainingSystem : ISystem
             }
         }
 
-        // If barracks has rally point, move unit there
-        if (em.HasComponent<RallyPoint>(barracks))
+        // If building has rally point, move unit there
+        if (em.HasComponent<RallyPoint>(building))
         {
-            var rally = em.GetComponentData<RallyPoint>(barracks);
+            var rally = em.GetComponentData<RallyPoint>(building);
             if (rally.Has != 0)
             {
                 // Give unit a move command to rally point
@@ -202,7 +191,5 @@ public partial struct BarracksTrainingSystem : ISystem
                 });
             }
         }
-        
-        return true;
     }
 }

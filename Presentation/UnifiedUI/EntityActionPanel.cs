@@ -1,5 +1,6 @@
 // EntityActionPanel.cs
 // Displays context-sensitive action buttons (building placement, unit training, etc.)
+// UPDATED: Deducts unit costs when adding to queue (not when spawning)
 
 using UnityEngine;
 using Unity.Entities;
@@ -143,14 +144,29 @@ public class EntityActionPanel : MonoBehaviour
         // Draw training buttons
         DrawActionGrid(entity, actionInfo.Actions, (button) =>
         {
-            // Add to training queue
+            // CRITICAL: Deduct cost when adding to queue (not when spawning)
             var em = UnifiedUIManager.GetEntityManager();
             if (!em.Exists(entity)) return;
             
+            // Get faction
+            Faction faction = Faction.Blue;
+            if (em.HasComponent<FactionTag>(entity))
+                faction = em.GetComponentData<FactionTag>(entity).Value;
+            
+            // Try to spend the cost
+            if (!FactionEconomy.Spend(em, faction, button.Cost))
+            {
+                Debug.LogWarning($"Cannot afford to train {button.Id} - cost: {button.Cost.Supplies}S {button.Cost.Iron}Fe");
+                return;
+            }
+            
+            // Cost paid successfully - add to training queue
             if (em.HasBuffer<TrainQueueItem>(entity))
             {
                 var queue = em.GetBuffer<TrainQueueItem>(entity);
                 queue.Add(new TrainQueueItem { UnitId = button.Id });
+                
+                Debug.Log($"Queued {button.Id} for training. Cost paid: {button.Cost.Supplies}S {button.Cost.Iron}Fe");
                 
                 // Consume event
                 Event.current.Use();
@@ -249,7 +265,8 @@ public class EntityActionPanel : MonoBehaviour
             var costStyle = new GUIStyle(_smallStyle)
             {
                 alignment = TextAnchor.MiddleCenter,
-                normal = { textColor = button.CanAfford ? new Color(0.8f, 0.8f, 0.8f) : Color.red }
+                normal = { textColor = button.CanAfford ? 
+                    new Color(0.8f, 0.8f, 0.8f) : Color.red }
             };
             GUILayout.Label(FormatCost(button.Cost), costStyle, GUILayout.Width(ButtonSize + 16f));
         }
@@ -353,8 +370,9 @@ public class EntityActionPanel : MonoBehaviour
         {
             _buttonStyle = new GUIStyle(GUI.skin.button)
             {
-                fixedWidth = ButtonSize,
-                fixedHeight = ButtonSize
+                fontSize = 11,
+                normal = { textColor = Color.white },
+                hover = { textColor = Color.yellow }
             };
         }
         
@@ -362,7 +380,7 @@ public class EntityActionPanel : MonoBehaviour
         {
             _labelStyle = new GUIStyle(GUI.skin.label)
             {
-                fontSize = 11,
+                fontSize = 10,
                 normal = { textColor = Color.white }
             };
         }
@@ -371,18 +389,33 @@ public class EntityActionPanel : MonoBehaviour
         {
             _smallStyle = new GUIStyle(GUI.skin.label)
             {
-                fontSize = 10,
+                fontSize = 9,
                 normal = { textColor = new Color(0.8f, 0.8f, 0.8f) }
             };
         }
     }
-    
+
+    Texture2D MakeTex(int width, int height, Color col)
+    {
+        Color[] pix = new Color[width * height];
+        for (int i = 0; i < pix.Length; i++)
+            pix[i] = col;
+
+        Texture2D result = new Texture2D(width, height);
+        result.SetPixels(pix);
+        result.Apply();
+        return result;
+    }
+        /// <summary>
+    /// Check if mouse pointer is over this panel.
+    /// </summary>
     public static bool IsPointerOver()
     {
         if (!PanelVisible) return false;
         
         Vector2 mousePos = Input.mousePosition;
         
+        // Convert to GUI coordinates (top-left origin)
         Rect guiRect = new Rect(
             PanelRect.x,
             Screen.height - PanelRect.y - PanelRect.height,
@@ -393,15 +426,4 @@ public class EntityActionPanel : MonoBehaviour
         return guiRect.Contains(mousePos);
     }
     
-    private Texture2D MakeTex(int width, int height, Color col)
-    {
-        Color[] pix = new Color[width * height];
-        for (int i = 0; i < pix.Length; i++)
-            pix[i] = col;
-        
-        Texture2D result = new Texture2D(width, height);
-        result.SetPixels(pix);
-        result.Apply();
-        return result;
-    }
 }

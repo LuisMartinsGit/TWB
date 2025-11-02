@@ -130,7 +130,6 @@ namespace TheWaningBorder.Gameplay
         /// </summary>
         static void SpawnPlayerStart(EntityManager em, float3 spawnPos, Faction fac)
         {
-
             // 1) Hall (Era 1 capital)
             Hall.Create(em, spawnPos, fac);
 
@@ -147,6 +146,12 @@ namespace TheWaningBorder.Gameplay
             var builderPos = spawnPos + new float3(-5, 0, 5);
             CreateBuilderWithStats(em, builderPos, fac);
 
+            // 4) NEW: Spawn iron deposit near Hall (no ownership - neutral resource)
+            //    Position it close enough for easy access but not blocking
+            var ironDepositPos = spawnPos + new float3(10, 0, -8);
+            TheWaningBorder.Resources.IronDeposit.Create(em, ironDepositPos);
+            
+            UnityEngine.Debug.Log($"Spawned iron deposit at {ironDepositPos} near {fac} Hall at {spawnPos}");
         }
 
         /// <summary>
