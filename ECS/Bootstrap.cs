@@ -27,7 +27,6 @@ namespace CrystallineRTS.Bootstrap
             if (_didSetupThisScene) return;
             _didSetupThisScene = true;
             EnsureTechTreeDB();                             
-
             GameCamera.Ensure();
 
             var go = new GameObject("RTS_Bootstrap");
@@ -37,22 +36,15 @@ namespace CrystallineRTS.Bootstrap
             TryAddComponent<SelectionDecalManager>(go);
             TryAddComponent<ProceduralTerrain>(go);
             TryAddComponent<HealthbarOverlay>(go);
-            
-            HumanFaction.GeneratePlayers(GameSettings.TotalPlayers); 
-            EconomyBootstrap.EnsureFactionBanks(GameSettings.TotalPlayers);
-            
+            TryAddComponent<UnifiedUIManager>(go);
+            TryAddComponent<UnifiedUI_Diagnostics>(go);
             TryAddComponent<EntityViewManager>(go);
             TryAddComponent<BuilderCommandPanel>(go);
-            
-            // Add BarracksPanel
-            var barracksPanel = TryAddComponent<BarracksPanel>(go);
-            if (barracksPanel != null)
-            {
-
-            }
-            
+            TryAddComponent<BarracksPanel>(go);
             TryAddComponent<TheWaningBorder.UI.ResourceHUD_IMGUI>(go);
 
+            HumanFaction.GeneratePlayers(GameSettings.TotalPlayers); 
+            EconomyBootstrap.EnsureFactionBanks(GameSettings.TotalPlayers);
             // Ensure FoW exists
             var fow = Object.FindObjectOfType<FogOfWarManager>();
             if (fow == null)
@@ -117,9 +109,6 @@ namespace CrystallineRTS.Bootstrap
             var db = go.AddComponent<TechTreeDB>();
             db.humanTechJson = json;
             Object.DontDestroyOnLoad(go);
-
-            // Wait a frame for Awake to run, then verify
-            var verifier = go.AddComponent<TechTreeDBVerifier>();
         }
 
         static void SyncFoWToTerrain()
@@ -167,75 +156,6 @@ namespace CrystallineRTS.Bootstrap
 
                 return null;
             }
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════════
-    // TECHTREEDB VERIFIER - Logs status after initialization
-    // ═══════════════════════════════════════════════════════════════
-    public class TechTreeDBVerifier : MonoBehaviour
-    {
-        void Start()
-        {
-            Invoke(nameof(Verify), 0.5f);
-        }
-
-        void Verify()
-        {
-
-            if (TechTreeDB.Instance == null)
-            {
-
-                return;
-            }
-
-            // Check Barracks building
-            if (TechTreeDB.Instance.TryGetBuilding("Barracks", out var barracks))
-            {
-
-                if (barracks.trains == null)
-                {
-
-                }
-                else if (barracks.trains.Length == 0)
-                {
-
-                }
-                else
-                {
-
-                    foreach (var unitId in barracks.trains)
-                    {
-
-                    }
-                }
-            }
-            else
-            {
-
-            }
-
-            // Check units
-            if (TechTreeDB.Instance.TryGetUnit("Swordsman", out var swordsman))
-            {
-
-            }
-            else
-            {
-
-            }
-
-            if (TechTreeDB.Instance.TryGetUnit("Archer", out var archer))
-            {
-
-            }
-            else
-            {
-
-            }
-
-            // Destroy this verifier after checking
-            Destroy(this);
         }
     }
 }

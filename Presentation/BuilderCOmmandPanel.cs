@@ -25,7 +25,7 @@ public class BuilderCommandPanel : MonoBehaviour
     private GameObject _placingInstance;
 
     // Which building are we placing
-    private enum BuildType { Hut, GatherersHut, Barracks, Shrine, Vault, Keep }
+    public enum BuildType { Hut, GatherersHut, Barracks, Shrine, Vault, Keep }
     private BuildType _currentBuild = BuildType.Hut;
 
     // Prefab previews
@@ -249,6 +249,9 @@ public class BuilderCommandPanel : MonoBehaviour
 
     void StartPlacement()
     {
+
+        Debug.Log("placing building");
+
         if (IsPlacingBuilding) return;
 
         var preview = GetPreviewFor(_currentBuild);
@@ -491,4 +494,24 @@ public class BuilderCommandPanel : MonoBehaviour
         if (!PanelVisible) return false;
         return PanelRectScreenBL.Contains(Input.mousePosition);
     }
+
+public static void TriggerBuildingPlacement(string buildingId)
+{
+    var instance = FindObjectOfType<BuilderCommandPanel>();
+    if (instance == null) return;
+    
+    instance._currentBuild = buildingId switch
+    {
+        "Hut" => BuildType.Hut,
+        "GatherersHut" => BuildType.GatherersHut,
+        "Barracks" => BuildType.Barracks,
+        "TempleOfRidan" => BuildType.Shrine,
+        "VaultOfAlmierra" => BuildType.Vault,
+        "FiendstoneKeep" => BuildType.Keep,
+        _ => BuildType.Hut
+    };
+    
+    instance.StartPlacement();
+    SuppressClicksThisFrame = true;
+}
 }

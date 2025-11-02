@@ -44,7 +44,7 @@ public static class EconomyBootstrap
             em.SetComponentData(bank, new FactionResources
             {
                 Supplies = 400,
-                Iron = 50,
+                Iron = 150,
                 Crystal = 0,
                 Veilsteel = 0,
                 Glow = 0
