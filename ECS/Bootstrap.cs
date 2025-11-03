@@ -37,7 +37,6 @@ namespace CrystallineRTS.Bootstrap
             TryAddComponent<ProceduralTerrain>(go);
             TryAddComponent<HealthbarOverlay>(go);
             TryAddComponent<UnifiedUIManager>(go);
-            TryAddComponent<UnifiedUI_Diagnostics>(go);
             TryAddComponent<EntityViewManager>(go);
             TryAddComponent<BuilderCommandPanel>(go);
             TryAddComponent<TheWaningBorder.UI.ResourceHUD_IMGUI>(go);

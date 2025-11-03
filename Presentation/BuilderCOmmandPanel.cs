@@ -128,78 +128,78 @@ public class BuilderCommandPanel : MonoBehaviour
         }
     }
 
-    void OnGUI()
-    {
-        PanelVisible = false;
+    // void OnGUI()
+    // {
+    //     PanelVisible = false;
 
-        var world = _world ?? World.DefaultGameObjectInjectionWorld;
-        if (world == null || !world.IsCreated) return;
-        if (_em.Equals(default(EntityManager))) _em = world.EntityManager;
-        if (_padding == null) _padding = new RectOffset(10, 10, 10, 10);
+    //     var world = _world ?? World.DefaultGameObjectInjectionWorld;
+    //     if (world == null || !world.IsCreated) return;
+    //     if (_em.Equals(default(EntityManager))) _em = world.EntityManager;
+    //     if (_padding == null) _padding = new RectOffset(10, 10, 10, 10);
 
-        // Create GUIStyles here (legal)
-        if (_iconBtn == null)
-        {
-            _iconBtn = new GUIStyle(GUI.skin.button)
-            {
-                fixedWidth = 64f,
-                fixedHeight = 64f,
-                padding = new RectOffset(4, 4, 4, 4),
-                margin = new RectOffset(2, 8, 2, 2),
-                imagePosition = ImagePosition.ImageOnly
-            };
-        }
-        if (_caption == null)
-        {
-            _caption = new GUIStyle(GUI.skin.label)
-            {
-                alignment = TextAnchor.UpperCenter,
-                wordWrap = true,
-                fontSize = 11
-            };
-        }
+    //     // Create GUIStyles here (legal)
+    //     if (_iconBtn == null)
+    //     {
+    //         _iconBtn = new GUIStyle(GUI.skin.button)
+    //         {
+    //             fixedWidth = 64f,
+    //             fixedHeight = 64f,
+    //             padding = new RectOffset(4, 4, 4, 4),
+    //             margin = new RectOffset(2, 8, 2, 2),
+    //             imagePosition = ImagePosition.ImageOnly
+    //         };
+    //     }
+    //     if (_caption == null)
+    //     {
+    //         _caption = new GUIStyle(GUI.skin.label)
+    //         {
+    //             alignment = TextAnchor.UpperCenter,
+    //             wordWrap = true,
+    //             fontSize = 11
+    //         };
+    //     }
 
-        bool hasBuilder = TryGetFirstSelectedBuilder(out _);
-        if (!IsPlacingBuilding && !hasBuilder) return;
+    //     bool hasBuilder = TryGetFirstSelectedBuilder(out _);
+    //     if (!IsPlacingBuilding && !hasBuilder) return;
 
-        PanelVisible = true;
+    //     PanelVisible = true;
 
-        float guiX = 10f;
-        float guiY = Screen.height - PanelHeight - 10f;
-        var area = new Rect(guiX, guiY, PanelWidth, PanelHeight);
+    //     float guiX = 10f;
+    //     float guiY = Screen.height - PanelHeight - 10f;
+    //     var area = new Rect(guiX, guiY, PanelWidth, PanelHeight);
 
-        GUI.Box(area, IsPlacingBuilding ? "Placing: Building" : "Builder");
-        var inner = new Rect(
-            area.x + _padding.left,
-            area.y + _padding.top,
-            area.width - _padding.horizontal,
-            area.height - _padding.vertical
-        );
+    //     GUI.Box(area, IsPlacingBuilding ? "Placing: Building" : "Builder");
+    //     var inner = new Rect(
+    //         area.x + _padding.left,
+    //         area.y + _padding.top,
+    //         area.width - _padding.horizontal,
+    //         area.height - _padding.vertical
+    //     );
 
-        GUILayout.BeginArea(inner);
-        GUILayout.Label(IsPlacingBuilding ? "Left-click to place, Right/Esc to cancel" : "Choose a building");
+    //     GUILayout.BeginArea(inner);
+    //     GUILayout.Label(IsPlacingBuilding ? "Left-click to place, Right/Esc to cancel" : "Choose a building");
 
-        GUI.enabled = !IsPlacingBuilding;
-        GUILayout.BeginHorizontal();
-        var facForPricing = GetSelectedFactionOrDefault();
+    //     GUI.enabled = !IsPlacingBuilding;
+    //     GUILayout.BeginHorizontal();
+    //     var facForPricing = GetSelectedFactionOrDefault();
 
-        DrawBuildButtonWithCost(_iconGatherersHut, "Hut", BuildType.GatherersHut, "Place Gatherer’s Hut", facForPricing);
-        DrawBuildButtonWithCost(_iconHut, "Hut", BuildType.Hut, "Place Hut", facForPricing);
-        DrawBuildButtonWithCost(_iconBarracks, "Barracks", BuildType.Barracks, "Place Barracks", facForPricing);
-        DrawBuildButtonWithCost(_iconShrine,   "Shrine",   BuildType.Shrine,   "Place Shrine to Ahridan", facForPricing);
-        DrawBuildButtonWithCost(_iconVault,    "Vault",    BuildType.Vault,    "Place Vault of Almiérra", facForPricing);
-        DrawBuildButtonWithCost(_iconKeep,     "Keep",     BuildType.Keep,     "Place Fiendstone Keep", facForPricing);
-        GUILayout.EndHorizontal();
-        GUILayout.BeginHorizontal();
+    //     DrawBuildButtonWithCost(_iconGatherersHut, "Hut", BuildType.GatherersHut, "Place Gatherer’s Hut", facForPricing);
+    //     DrawBuildButtonWithCost(_iconHut, "Hut", BuildType.Hut, "Place Hut", facForPricing);
+    //     DrawBuildButtonWithCost(_iconBarracks, "Barracks", BuildType.Barracks, "Place Barracks", facForPricing);
+    //     DrawBuildButtonWithCost(_iconShrine,   "Shrine",   BuildType.Shrine,   "Place Shrine to Ahridan", facForPricing);
+    //     DrawBuildButtonWithCost(_iconVault,    "Vault",    BuildType.Vault,    "Place Vault of Almiérra", facForPricing);
+    //     DrawBuildButtonWithCost(_iconKeep,     "Keep",     BuildType.Keep,     "Place Fiendstone Keep", facForPricing);
+    //     GUILayout.EndHorizontal();
+    //     GUILayout.BeginHorizontal();
 
-        // we need the faction to price against
+    //     // we need the faction to price against
 
-        GUILayout.EndHorizontal();
+    //     GUILayout.EndHorizontal();
 
-        GUI.enabled = true;
+    //     GUI.enabled = true;
 
-        GUILayout.EndArea();
-    }
+    //     GUILayout.EndArea();
+    // }
 
     void DrawBuildButtonWithCost(Texture2D icon, string label, BuildType type, string tooltip, Faction facForPricing)
     {

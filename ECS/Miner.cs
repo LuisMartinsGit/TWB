@@ -15,7 +15,7 @@ namespace TheWaningBorder.Humans
         private const float DefaultDamage = 2f;
         private const float DefaultLoS = 10f;
         private const float DefaultGatherSpeed = 1f;
-        private const int DefaultCarryCapacity = 10;
+        private const int DefaultCarryCapacity = 1;
 
         /// <summary>
         /// EntityCommandBuffer version - for use in training systems
