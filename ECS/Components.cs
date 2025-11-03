@@ -405,3 +405,271 @@ public struct PopulationCost : IComponentData
     /// <summary>How many population slots this unit consumes</summary>
     public int Amount;
 }
+// AIComponents.cs
+// Core components for AI system
+
+namespace TheWaningBorder.AI
+{
+    // ==================== AI Brain ====================
+
+    /// <summary>
+    /// Main AI controller for a faction. One per AI player.
+    /// </summary>
+    public struct AIBrain : IComponentData
+    {
+        public Faction Owner;
+        public float UpdateInterval; // How often AI thinks (seconds)
+        public float NextUpdateTime;
+        public byte IsActive; // 0/1
+        public AIPersonality Personality;
+        public AIDifficulty Difficulty;
+    }
+
+    public enum AIPersonality : byte
+    {
+        Balanced = 0,
+        Aggressive = 1,
+        Defensive = 2,
+        Economic = 3,
+        Rush = 4
+    }
+
+    public enum AIDifficulty : byte
+    {
+        Easy = 0,
+        Normal = 1,
+        Hard = 2,
+        Expert = 3
+    }
+
+    // ==================== Economy Manager ====================
+
+    public struct AIEconomyState : IComponentData
+    {
+        public int AssignedMiners;
+        public int DesiredMiners;
+        public int ActiveGatherersHuts;
+        public int DesiredGatherersHuts;
+
+        public float LastMineAssignmentCheck;
+        public float MineCheckInterval; // seconds
+
+        public byte NeedsMoreSupplyIncome; // 0/1
+        public byte NeedsMoreIronIncome; // 0/1
+    }
+
+    public struct MineAssignment : IBufferElementData
+    {
+        public Entity MineEntity;
+        public int AssignedWorkers;
+        public int MaxWorkers; // Capacity of this mine
+        public float3 Position;
+    }
+
+    // ==================== Building Manager ====================
+
+    public struct AIBuildingState : IComponentData
+    {
+        public int ActiveBuilders;
+        public int DesiredBuilders;
+        public int QueuedConstructions;
+
+        public float LastBuildCheck;
+        public float BuildCheckInterval;
+    }
+
+    public struct BuildRequest : IBufferElementData
+    {
+        public FixedString64Bytes BuildingType; // "GatherersHut", "Barracks", etc.
+        public float3 DesiredPosition;
+        public int Priority; // Higher = more urgent
+        public byte Assigned; // 0 = pending, 1 = builder assigned
+        public Entity AssignedBuilder;
+    }
+
+    // ==================== Military Manager ====================
+
+    public struct AIMilitaryState : IComponentData
+    {
+        public int TotalSoldiers;
+        public int TotalArchers;
+        public int TotalSiegeUnits;
+
+        public int ActiveBarracks;
+        public int DesiredBarracks;
+
+        public int ArmiesCount;
+        public int ScoutsCount;
+
+        public float LastRecruitmentCheck;
+        public float RecruitmentCheckInterval;
+    }
+
+    public struct RecruitmentRequest : IBufferElementData
+    {
+        public UnitClass UnitType;
+        public int Quantity;
+        public int Priority;
+        public Entity RequestingManager; // Which manager requested this
+    }
+
+    // ==================== Scouting Manager ====================
+
+    public struct AIScoutingState : IComponentData
+    {
+        public int ActiveScouts;
+        public int DesiredScouts;
+
+        public float LastScoutUpdate;
+        public float ScoutUpdateInterval;
+
+        public float MapExplorationPercent; // 0-100
+    }
+
+    public struct ScoutAssignment : IBufferElementData
+    {
+        public Entity ScoutUnit;
+        public float3 TargetArea;
+        public byte IsActive; // 0/1
+        public float LastReportTime;
+    }
+
+    public struct EnemySighting : IBufferElementData
+    {
+        public Faction EnemyFaction;
+        public float3 Position;
+        public double TimeStamp; // SystemAPI.Time.ElapsedTime
+        public int EstimatedStrength; // Rough power estimate
+        public byte IsBase; // 0 = army, 1 = base/building
+    }
+
+    // ==================== Mission Manager ====================
+
+    public struct AIMissionState : IComponentData
+    {
+        public int ActiveMissions;
+        public int PendingMissions;
+
+        public float LastMissionUpdate;
+        public float MissionUpdateInterval;
+    }
+
+    public enum MissionType : byte
+    {
+        Attack = 0,
+        Defend = 1,
+        Raid = 2,
+        Scout = 3,
+        Expand = 4
+    }
+
+    public enum MissionStatus : byte
+    {
+        Pending = 0,
+        Active = 1,
+        Completed = 2,
+        Failed = 3,
+        Cancelled = 4
+    }
+
+    public struct AIMission : IComponentData
+    {
+        public int MissionId;
+        public MissionType Type;
+        public MissionStatus Status;
+        public float3 TargetPosition;
+        public Faction TargetFaction;
+
+        public int RequiredStrength; // How much army power needed
+        public int AssignedStrength; // Current army power assigned
+
+        public double CreatedTime;
+        public double LastUpdateTime;
+
+        public int Priority; // Higher = more important
+    }
+
+    public struct AssignedArmy : IBufferElementData
+    {
+        public Entity ArmyEntity;
+        public int Strength;
+    }
+
+    // ==================== Tactical Manager ====================
+
+    public struct AITacticalState : IComponentData
+    {
+        public int ManagedArmies;
+
+        public float LastTacticalUpdate;
+        public float TacticalUpdateInterval;
+    }
+
+    public struct AIArmy : IComponentData
+    {
+        public int ArmyId;
+        public Faction Owner;
+        public Entity MissionEntity; // Current mission
+
+        public float3 Position;
+        public int TotalStrength;
+
+        public byte IsInCombat; // 0/1
+        public float LastCombatTime;
+    }
+
+    public struct ArmyUnit : IBufferElementData
+    {
+        public Entity Unit;
+        public UnitClass Type;
+        public int Strength; // HP + attack value
+    }
+
+    public struct TacticalTarget : IBufferElementData
+    {
+        public Entity TargetEntity;
+        public float3 Position;
+        public int Priority; // Higher = attack first
+        public float ThreatLevel; // How dangerous
+    }
+
+    // ==================== Resource Requests ====================
+
+    public struct ResourceRequest : IBufferElementData
+    {
+        public int Supplies;
+        public int Iron;
+        public int Crystal;
+        public int Veilsteel;
+        public int Glow;
+
+        public int Priority;
+        public Entity Requester; // Which entity needs resources
+        public byte Approved; // 0 = pending, 1 = approved, 2 = denied
+    }
+
+    // ==================== Shared Utilities ====================
+
+    public struct AISharedKnowledge : IComponentData
+    {
+        public float3 EnemyLastKnownPosition;
+        public double EnemyLastSeenTime;
+        public int EnemyEstimatedStrength;
+
+        public int KnownEnemyBases;
+        public int OwnMilitaryStrength;
+        public int OwnEconomicStrength; // Resources per minute
+    }
+}
+
+
+public struct MiningTarget : IComponentData
+{
+    public Entity Mine;
+    public float3 TargetPosition;
+}
+
+namespace TheWaningBorder.AI
+{
+    public struct IronMineTag : IComponentData {}   // tag component
+}

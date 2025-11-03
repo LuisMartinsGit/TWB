@@ -6,6 +6,7 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using TheWaningBorder.GameCamera;
 using TheWaningBorder.Gameplay;
+using TheWaningBorder.AI;
 
 namespace CrystallineRTS.Bootstrap
 {
@@ -41,14 +42,15 @@ namespace CrystallineRTS.Bootstrap
             TryAddComponent<BuilderCommandPanel>(go);
             TryAddComponent<TheWaningBorder.UI.ResourceHUD_IMGUI>(go);
 
-            HumanFaction.GeneratePlayers(GameSettings.TotalPlayers); 
+            HumanFaction.GeneratePlayers(GameSettings.TotalPlayers);
             EconomyBootstrap.EnsureFactionBanks(GameSettings.TotalPlayers);
+            AIBootstrap.InitializeAIPlayers(GameSettings.TotalPlayers, Faction.Blue);
             // Ensure FoW exists
-            var fow = Object.FindObjectOfType<FogOfWarManager>();
-            if (fow == null)
-                FogOfWarManager.SetupFogOfWar();
+            // var fow = Object.FindObjectOfType<FogOfWarManager>();
+            // if (fow == null)
+            //     FogOfWarManager.SetupFogOfWar();
 
-            SyncFoWToTerrain();
+            // SyncFoWToTerrain();
 
         }
 
