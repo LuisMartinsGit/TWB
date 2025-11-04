@@ -3,7 +3,7 @@ using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
-
+using System.Runtime.CompilerServices;
 /// <summary>
 /// ULTRA-OPTIMIZED unit separation with spatial hashing.
 /// Uses NativeHashMap + NativeList instead of NativeMultiHashMap.
@@ -80,7 +80,8 @@ public partial struct UnitSeparationSystem : ISystem
             if (!em.Exists(allUnits[i])) continue;
             
             var pos = allPositions[i].Position;
-            int2 cellKey = GetCellKey(pos);
+            int2 cellKey;
+            GetCellKey(pos, CellSize, out cellKey);
             
             // Add to cell list
             cellIndices.Add(new UnitCellData { UnitIndex = i, CellKey = cellKey });
@@ -105,8 +106,8 @@ public partial struct UnitSeparationSystem : ISystem
             var myRadius = allRadii[i].Value;
             float3 pushDirection = float3.zero;
             int pushCount = 0;
-
-            int2 myCell = GetCellKey(myPos);
+            int2 myCell;
+            GetCellKey(myPos, CellSize, out myCell);
             
             // Check only neighboring cells (3x3 grid)
             for (int dx = -1; dx <= 1; dx++)
@@ -176,14 +177,14 @@ public partial struct UnitSeparationSystem : ISystem
         allPositions.Dispose();
         allRadii.Dispose();
     }
-
     [BurstCompile]
-    private static int2 GetCellKey(float3 position)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void GetCellKey(in float3 position, float cellSize, out int2 key)
     {
-        return new int2(
-            (int)math.floor(position.x / CellSize),
-            (int)math.floor(position.z / CellSize)
-        );
+        float inv = 1f / cellSize; // precompute reciprocal to avoid two divides
+        int x = (int)math.floor(position.x * inv);
+        int z = (int)math.floor(position.z * inv);
+        key = new int2(x, z);
     }
     
     private struct UnitCellData

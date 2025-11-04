@@ -5,6 +5,8 @@ using Unity.Transforms;
 using TheWaningBorder.Humans;         // (we keep using your GatherersHut factory if you prefer)
                                       // but this file can spawn others directly too
 using TheWaningBorder.Economy;
+using TheWaningBorder.Player;
+using TheWaningBorder.Factions.Humans;
 
 public class BuilderCommandPanel : MonoBehaviour
 {
@@ -55,14 +57,14 @@ public class BuilderCommandPanel : MonoBehaviour
         _ => "Hut"
     };
 
-    private static string CostText(in Cost c)
-    {
-        // compact human-readable cost line
-        System.Text.StringBuilder sb = new System.Text.StringBuilder(48);
-        void add(string n, int v) { if (v>0) { if (sb.Length>0) sb.Append("  "); sb.Append(n).Append(' ').Append(v); } }
-        add("S", c.Supplies); add("Fe", c.Iron); add("Cr", c.Crystal); add("Vs", c.Veilsteel); add("Gl", c.Glow);
-        return sb.Length==0 ? "Free" : sb.ToString();
-    }
+    // private static string CostText(in Cost c)
+    // {
+    //     // compact human-readable cost line
+    //     System.Text.StringBuilder sb = new System.Text.StringBuilder(48);
+    //     void add(string n, int v) { if (v>0) { if (sb.Length>0) sb.Append("  "); sb.Append(n).Append(' ').Append(v); } }
+    //     add("S", c.Supplies); add("Fe", c.Iron); add("Cr", c.Crystal); add("Vs", c.Veilsteel); add("Gl", c.Glow);
+    //     return sb.Length==0 ? "Free" : sb.ToString();
+    // }
     void Awake()
     {
         _world = World.DefaultGameObjectInjectionWorld;
@@ -201,51 +203,51 @@ public class BuilderCommandPanel : MonoBehaviour
     //     GUILayout.EndArea();
     // }
 
-    void DrawBuildButtonWithCost(Texture2D icon, string label, BuildType type, string tooltip, Faction facForPricing)
-    {
-        GUILayout.BeginVertical(GUILayout.Width(80f));
+    // void DrawBuildButtonWithCost(Texture2D icon, string label, BuildType type, string tooltip, Faction facForPricing)
+    // {
+    //     GUILayout.BeginVertical(GUILayout.Width(80f));
 
-        var id = BuildId(type);
-        if (!BuildCosts.TryGet(id, out var cost)) cost = default;
+    //     var id = BuildId(type);
+    //     if (!BuildCosts.TryGet(id, out var cost)) cost = default;
 
-        bool canAfford = true;
-        if (_em.Equals(default(EntityManager)) == false)
-            canAfford = FactionEconomy.CanAfford(_em, facForPricing, cost);
+    //     bool canAfford = true;
+    //     if (_em.Equals(default(EntityManager)) == false)
+    //         canAfford = FactionEconomy.CanAfford(_em, facForPricing, cost);
 
-        var prevEnabled = GUI.enabled;
-        GUI.enabled = prevEnabled && !IsPlacingBuilding && canAfford;
+    //     var prevEnabled = GUI.enabled;
+    //     GUI.enabled = prevEnabled && !IsPlacingBuilding && canAfford;
 
-        if (icon != null)
-        {
-            var content = new GUIContent(icon, tooltip + (cost.IsZero ? "" : $" ({CostText(cost)})"));
-            if (GUILayout.Button(content, _iconBtn))
-            {
-                _currentBuild = type;
-                StartPlacement();
-                SuppressClicksThisFrame = true;
-            }
-        }
-        else
-        {
-            if (GUILayout.Button(label, GUILayout.Width(64f), GUILayout.Height(64f)))
-            {
-                _currentBuild = type;
-                StartPlacement();
-                SuppressClicksThisFrame = true;
-            }
-        }
+    //     if (icon != null)
+    //     {
+    //         var content = new GUIContent(icon, tooltip + (cost.IsZero ? "" : $" ({CostText(cost)})"));
+    //         if (GUILayout.Button(content, _iconBtn))
+    //         {
+    //             _currentBuild = type;
+    //             StartPlacement();
+    //             SuppressClicksThisFrame = true;
+    //         }
+    //     }
+    //     else
+    //     {
+    //         if (GUILayout.Button(label, GUILayout.Width(64f), GUILayout.Height(64f)))
+    //         {
+    //             _currentBuild = type;
+    //             StartPlacement();
+    //             SuppressClicksThisFrame = true;
+    //         }
+    //     }
 
-        GUI.enabled = prevEnabled;
+    //     GUI.enabled = prevEnabled;
 
-        // Labels: name + cost (red if unaffordable)
-        GUILayout.Label(label, _caption, GUILayout.Width(80f));
+    //     // Labels: name + cost (red if unaffordable)
+    //     GUILayout.Label(label, _caption, GUILayout.Width(80f));
 
-        var s = new GUIStyle(_caption);
-        if (!canAfford) s.normal.textColor = Color.red;
-        GUILayout.Label(CostText(cost), s, GUILayout.Width(80f));
+    //     var s = new GUIStyle(_caption);
+    //     if (!canAfford) s.normal.textColor = Color.red;
+    //     GUILayout.Label(CostText(cost), s, GUILayout.Width(80f));
 
-        GUILayout.EndVertical();
-    }
+    //     GUILayout.EndVertical();
+    // }
 
     void StartPlacement()
     {
@@ -375,14 +377,14 @@ public class BuilderCommandPanel : MonoBehaviour
         }
     }
 
-    // Generic spawner that reads TechTreeDB if available; else uses provided defaults
+    // Generic spawner that reads HumanTech if available; else uses provided defaults
     void CreateSimpleBuilding(EntityManager em, float3 pos, Faction fac,
                               string buildingId, float defaultHp, float defaultLoS, float defaultRadius,
                               System.Action<Entity> addSpecificTag)
     {
         float hp = defaultHp, los = defaultLoS, radius = defaultRadius;
 
-        if (TechTreeDB.Instance != null && TechTreeDB.Instance.TryGetBuilding(buildingId, out var bdef))
+        if (HumanTech.Instance != null && HumanTech.Instance.TryGetBuilding(buildingId, out var bdef))
         {
             if (bdef.hp > 0) hp = bdef.hp;
             if (bdef.lineOfSight > 0) los = bdef.lineOfSight;
@@ -446,7 +448,7 @@ public class BuilderCommandPanel : MonoBehaviour
     bool TryGetFirstSelectedBuilder(out Entity builder)
     {
         builder = Entity.Null;
-        var sel = RTSInput.CurrentSelection;
+        var sel = Controls.CurrentSelection;
         if (sel == null || sel.Count == 0) return false;
         if (_em.Equals(default(EntityManager))) return false;
 

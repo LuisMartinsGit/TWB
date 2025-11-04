@@ -6,6 +6,7 @@ using Unity.Entities;
 using Unity.Collections;
 using UnityEngine;
 using TheWaningBorder.Economy;
+using TheWaningBorder.Factions.Humans;
 
 // Helper to convert CostBlock to Cost
 public static class CostBlockExtensions
@@ -113,14 +114,14 @@ public static class EntityActionExtractor
         
         var actionList = new List<ActionButton>();
         
-        // Get trainable units from TechTreeDB
-        if (TechTreeDB.Instance != null && TechTreeDB.Instance.TryGetBuilding(buildingId, out BuildingDef bdef))
+        // Get trainable units from HumanTech
+        if (HumanTech.Instance != null && HumanTech.Instance.TryGetBuilding(buildingId, out BuildingDef bdef))
         {
             if (bdef.trains != null && bdef.trains.Length > 0)
             {
                 foreach (var unitId in bdef.trains)
                 {
-                    if (TechTreeDB.Instance.TryGetUnit(unitId, out UnitDef udef))
+                    if (HumanTech.Instance.TryGetUnit(unitId, out UnitDef udef))
                     {
                         // Convert CostBlock to Cost
                         Cost unitCost = udef.cost.ToCost();
@@ -182,8 +183,8 @@ public static class EntityActionExtractor
                 trainingInfo.CurrentUnitId = queueList[0];
                 
                 // Calculate progress
-                if (TechTreeDB.Instance != null && 
-                    TechTreeDB.Instance.TryGetUnit(trainingInfo.CurrentUnitId, out UnitDef udef))
+                if (HumanTech.Instance != null && 
+                    HumanTech.Instance.TryGetUnit(trainingInfo.CurrentUnitId, out UnitDef udef))
                 {
                     float totalTime = udef.trainingTime > 0 ? udef.trainingTime : 1f;
                     float elapsed = totalTime - ts.Remaining;

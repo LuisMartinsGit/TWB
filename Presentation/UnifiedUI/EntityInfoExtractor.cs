@@ -3,7 +3,8 @@
 
 using Unity.Entities;
 using UnityEngine;
-
+using TheWaningBorder.Factions.Humans;
+using TheWaningBorder.Factions.Humans.Era1.Units;
 public static class EntityInfoExtractor
 {
     /// <summary>
@@ -38,7 +39,7 @@ public static class EntityInfoExtractor
         info.Name = unitId;
         
         // Load from TechTreeDB if available
-        if (TechTreeDB.Instance != null && TechTreeDB.Instance.TryGetUnit(unitId, out UnitDef udef))
+        if (HumanTech.Instance != null && HumanTech.Instance.TryGetUnit(unitId, out UnitDef udef))
         {
             info.Name = udef.name;
             info.Description = GetUnitDescription(unitId);
@@ -82,8 +83,8 @@ public static class EntityInfoExtractor
         string buildingId = DetermineBuildingId(entity, em);
         info.Name = buildingId;
         
-        // Load from TechTreeDB if available
-        if (TechTreeDB.Instance != null && TechTreeDB.Instance.TryGetBuilding(buildingId, out BuildingDef bdef))
+        // Load from HumanTech if available
+        if (HumanTech.Instance != null && HumanTech.Instance.TryGetBuilding(buildingId, out BuildingDef bdef))
         {
             info.Name = bdef.name;
             info.Description = GetBuildingDescription(buildingId);

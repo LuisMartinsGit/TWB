@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using Unity.Entities;
 using Unity.Transforms;
+using TheWaningBorder.Player;
 
 [DefaultExecutionOrder(900)]
 public class SelectionDecalManager : MonoBehaviour
@@ -56,7 +57,7 @@ public class SelectionDecalManager : MonoBehaviour
         if (_fow != null) _humanFaction = _fow.HumanFaction;
 
         // 1) Maintain selection rings (per-faction color)
-        var want = RTSInput.CurrentSelection ?? new List<Entity>();
+        var want = Controls.CurrentSelection ?? new List<Entity>();
         var still = new HashSet<Entity>();
 
         for (int i = 0; i < want.Count; i++)
@@ -96,7 +97,7 @@ public class SelectionDecalManager : MonoBehaviour
         foreach (var e in toRemove) _rings.Remove(e);
 
         // 2) Hover ring (per-faction color, FoW-aware)
-        var h = RTSInput.CurrentHover;
+        var h = Controls.CurrentHover;
         bool showHover = false;
         if (h != Entity.Null && _em.Exists(h) && _em.HasComponent<FactionTag>(h))
         {

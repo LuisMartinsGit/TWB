@@ -3,7 +3,7 @@ using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
-
+using TheWaningBorder.Factions.Humans.Era1.Units;
 /// <summary>
 /// Unified combat system with HEIGHT-BASED DAMAGE MODIFIERS.
 /// Height advantage: +20% damage (max)
@@ -176,7 +176,23 @@ public partial struct UnifiedCombatSystem : ISystem
                 var dd = em.GetComponentData<DesiredDestination>(entity);
                 if (dd.Has != 0)
                 {
-                    continue;
+                    bool isReturningToGuard = false;
+                    if (em.HasComponent<GuardPoint>(entity))
+                    {
+                        var gp = em.GetComponentData<GuardPoint>(entity);
+                        if (gp.Has != 0)
+                        {
+                            // If the desired destination ~equals the guard point, treat it as "returning"
+                            var distToGuardTarget = math.distance(dd.Position, gp.Position);
+                            isReturningToGuard = distToGuardTarget < 1f;
+                        }
+                    }
+
+                    // Only skip if it's not a "returning to guard" move
+                    if (!isReturningToGuard)
+                    {
+                        continue;
+                    }
                 }
             }
 
@@ -253,18 +269,62 @@ public partial struct UnifiedCombatSystem : ISystem
         // =============================================================================
         // PHASE 4: Return to guard point
         // =============================================================================
-        foreach (var (transform, guardPoint, entity) in SystemAPI
-            .Query<RefRO<LocalTransform>, RefRO<GuardPoint>>()
-            .WithAll<UnitTag>()
-            .WithNone<Target>()
-            .WithNone<AttackCommand>()
-            .WithEntityAccess())
+        foreach (var (transform, guardPoint, faction, lineOfSight, entity) in SystemAPI
+     .Query<RefRO<LocalTransform>, RefRO<GuardPoint>, RefRO<FactionTag>, RefRO<LineOfSight>>()
+     .WithAll<UnitTag>()
+     .WithNone<Target>()
+     .WithNone<AttackCommand>()
+     .WithEntityAccess())
         {
             if (guardPoint.ValueRO.Has == 0) continue;
 
             var myPos = transform.ValueRO.Position;
             var gpPos = guardPoint.ValueRO.Position;
             var distToGuard = math.distance(myPos, gpPos);
+
+            // ======= NEW: Try to grab the next target in LOS before returning =======
+            var myFaction = faction.ValueRO.Value;
+            var los = lineOfSight.ValueRO.Radius;
+
+            Entity bestTarget = Entity.Null;
+            float bestDist = float.MaxValue;
+
+            for (int i = 0; i < allEnemies.Length; i++)
+            {
+                if (allEnemyFactions[i].Value == myFaction) continue;
+                if (allEnemyHealth[i].Value <= 0) continue;
+
+                var enemyPos = allEnemyTransforms[i].Position;
+                var dist = math.distance(myPos, enemyPos);
+
+                if (dist <= los && dist < bestDist)
+                {
+                    bestTarget = allEnemies[i];
+                    bestDist = dist;
+                }
+            }
+
+            if (bestTarget != Entity.Null)
+            {
+                // Acquire immediately instead of going home
+                if (!em.HasComponent<Target>(entity))
+                {
+                    ecb.AddComponent(entity, new Target { Value = bestTarget });
+                }
+                else
+                {
+                    ecb.SetComponent(entity, new Target { Value = bestTarget });
+                }
+
+                // Stop any "return to guard" move
+                if (em.HasComponent<DesiredDestination>(entity))
+                {
+                    ecb.SetComponent(entity, new DesiredDestination { Has = 0 });
+                }
+
+                continue; // skip issuing guard return
+            }
+            // ======= /NEW =======
 
             if (distToGuard > GuardReturnThreshold)
             {
@@ -281,22 +341,11 @@ public partial struct UnifiedCombatSystem : ISystem
 
                 if (!isMovingToGuard)
                 {
+                    var dd = new DesiredDestination { Position = gpPos, Has = 1 };
                     if (!em.HasComponent<DesiredDestination>(entity))
-                    {
-                        ecb.AddComponent(entity, new DesiredDestination
-                        {
-                            Position = gpPos,
-                            Has = 1
-                        });
-                    }
+                        ecb.AddComponent(entity, dd);
                     else
-                    {
-                        ecb.SetComponent(entity, new DesiredDestination
-                        {
-                            Position = gpPos,
-                            Has = 1
-                        });
-                    }
+                        ecb.SetComponent(entity, dd);
                 }
             }
         }

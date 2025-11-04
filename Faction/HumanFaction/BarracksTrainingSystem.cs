@@ -8,6 +8,8 @@ using Unity.Mathematics;
 using Unity.Transforms;
 using TheWaningBorder.Humans;
 using TheWaningBorder.Economy;
+using TheWaningBorder.Factions.Humans;
+using TheWaningBorder.Factions.Humans.Era1.Units;
 
 [BurstCompile]
 public partial struct BarracksTrainingSystem : ISystem
@@ -19,7 +21,7 @@ public partial struct BarracksTrainingSystem : ISystem
 
     public void OnUpdate(ref SystemState state)
     {
-        var db = TechTreeDB.Instance;
+        var db = HumanTech.Instance;
         if (db == null) return;
 
         float dt = SystemAPI.Time.DeltaTime;
@@ -93,8 +95,8 @@ public partial struct BarracksTrainingSystem : ISystem
         var em = state.EntityManager;
         var fac = em.GetComponentData<FactionTag>(barracks).Value;
         
-        // Get unit cost from TechTreeDB
-        if (!TechTreeDB.Instance.TryGetUnit(unitId, out var udef))
+        // Get unit cost from HumanTech
+        if (!HumanTech.Instance.TryGetUnit(unitId, out var udef))
             return false;
         
         // Convert unit cost to Cost structure
@@ -145,19 +147,19 @@ public partial struct BarracksTrainingSystem : ISystem
         switch (unitId)
         {
             case "Swordsman":
-                unit = Swordsman.Create(ecb, finalPos, fac);
+                unit = Swordsman.Create(em, finalPos, fac);
                 break;
             case "Archer":
-                unit = Archer.Create(ecb, finalPos, fac);
+                unit = Archer.Create(em, finalPos, fac);
                 break;
             default:
-                unit = Swordsman.Create(ecb, finalPos, fac);
+                unit = Swordsman.Create(em, finalPos, fac);
                 break;
         }
 
         // Apply ALL stats from JSON
-        if (TechTreeDB.Instance != null &&
-            TechTreeDB.Instance.TryGetUnit(unitId, out var udefStats))
+        if (HumanTech.Instance != null &&
+            HumanTech.Instance.TryGetUnit(unitId, out var udefStats))
         {
             // Basic stats
             ecb.SetComponent(unit, new Health { Value = (int)udefStats.hp, Max = (int)udefStats.hp });

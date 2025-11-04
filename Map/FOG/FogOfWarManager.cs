@@ -1,4 +1,6 @@
 using System;
+using TMPro;
+using Unity.VisualScripting;
 using UnityEngine;
 
 public class FogOfWarManager : MonoBehaviour
@@ -292,6 +294,7 @@ public class FogOfWarManager : MonoBehaviour
         {
             root.AddComponent<OneShotFoWRebuilder>().Init(mgr, 128);
         }
+        SyncFoWToTerrain();
     }
     private class OneShotFoWRebuilder : MonoBehaviour
     {
@@ -348,5 +351,24 @@ public class FogOfWarManager : MonoBehaviour
         // Ensure texture is bound again and pushed
         EnsureMaterialBound();
         PushHumanTexture();
+    }
+    static void SyncFoWToTerrain()
+    {
+        // Get the manager instance (fallback to a scene search just in case)
+        var fow = Instance ?? UnityEngine.Object.FindObjectOfType<FogOfWarManager>();
+        var terrain = Terrain.activeTerrain;
+
+        if (fow == null || terrain == null || terrain.terrainData == null)
+            return;
+
+        var td   = terrain.terrainData;
+        var tpos = terrain.transform.position;
+        var size = td.size;
+
+        Vector2 newMin = new Vector2(tpos.x,           tpos.z);
+        Vector2 newMax = new Vector2(tpos.x + size.x,  tpos.z + size.z);
+
+        // This handles rebuilding the grid, recreating the surface, rebinding the material, and pushing the texture
+        fow.ApplyBounds(newMin, newMax, fow.CellSize, clearRevealed: false, surfaceGrid: 128);
     }
 }

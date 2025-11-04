@@ -1,7 +1,7 @@
 using UnityEngine;
 using Unity.Entities;
-using Unity.Mathematics;
 using Unity.Transforms;
+using TheWaningBorder.Player;
 
 public class HealthbarOverlay : MonoBehaviour
 {
@@ -24,8 +24,8 @@ public class HealthbarOverlay : MonoBehaviour
         var xfs  = q.ToComponentDataArray<LocalTransform>(Unity.Collections.Allocator.Temp);
         var hps  = q.ToComponentDataArray<Health>(Unity.Collections.Allocator.Temp);
 
-        var sel = RTSInput.CurrentSelection;
-        var hov = RTSInput.CurrentHover;
+        var sel = Controls.CurrentSelection;
+        var hov = Controls.CurrentHover;
 
         for (int i = 0; i < ents.Length; i++)
         {

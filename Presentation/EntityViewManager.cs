@@ -252,36 +252,6 @@ public class EntityViewManager : MonoBehaviour
     {
         isBuilding = false; uClass = UnitClass.Melee;
 
-        // // 1) Crystal (Curse) first
-        // if (_em.HasComponent<CrystalMainNodeTag>(e)) { isBuilding = true; return "curse/bld/main"; }
-        // if (_em.HasComponent<CrystalSubNodeTag>(e))
-        // {
-        //     isBuilding = true;
-        //     var sub = _em.GetComponentData<CrystalSubNodeTag>(e);
-        //     switch (sub.Type)
-        //     {
-        //         case CrystalSubNodeType.Resource: return "curse/bld/sub/resource";
-        //         case CrystalSubNodeType.Turret:   return "curse/bld/sub/turret";
-        //         case CrystalSubNodeType.Repair:   return "curse/bld/sub/repair";
-        //         case CrystalSubNodeType.Enforcer: return "curse/bld/sub/enforcer";
-        //         case CrystalSubNodeType.Storm:    return "curse/bld/sub/storm";
-        //         case CrystalSubNodeType.Obelisk:  return "curse/bld/sub/obelisk";
-        //         case CrystalSubNodeType.Nexus:    return "curse/bld/sub/nexus";
-        //     }
-        // }
-        // if (_em.HasComponent<CrystalUnitTag>(e))
-        // {
-        //     var k = _em.GetComponentData<CrystalUnitTag>(e).Kind;
-        //     switch (k)
-        //     {
-        //         case CrystalUnitKind.Crystalling: uClass=UnitClass.Melee;  return "curse/unit/crystalling";
-        //         case CrystalUnitKind.Veilstinger: uClass=UnitClass.Ranged; return "curse/unit/veilstinger";
-        //         case CrystalUnitKind.Shardmender: uClass=UnitClass.Support;return "curse/unit/shardmender";
-        //         case CrystalUnitKind.Godsplinter: uClass=UnitClass.Siege;  return "curse/unit/godsplinter";
-        //         case CrystalUnitKind.Colossus:    uClass=UnitClass.Siege;  return "curse/unit/colossus";
-        //     }
-        // }
-
         // 2) Humans
         bool hasB = _em.HasComponent<BuildingTag>(e);
         bool hasU = _em.HasComponent<UnitTag>(e);

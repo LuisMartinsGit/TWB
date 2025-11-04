@@ -1,12 +1,12 @@
 // IronDeposit.cs and MiningSystem.cs - FIXED VERSION
 // Iron deposits that miners can gather from
-// FIXED: Properly handles zero-sized tag components
+// FIXED: Properly handles zero-sized tag components + ECB for structural changes during iteration
 
 using Unity.Burst;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
-using TheWaningBorder.Humans;
+using TheWaningBorder.Factions.Humans.Era1.Units;
 using TheWaningBorder.Economy;
 
 namespace TheWaningBorder.Resources
@@ -30,7 +30,6 @@ namespace TheWaningBorder.Resources
             em.SetComponentData(e, new PresentationId { Id = 301 }); // Iron deposit ID
             em.SetComponentData(e, LocalTransform.FromPositionRotationScale(pos, quaternion.identity, 0.8f));
             // FIXED: Don't call SetComponentData on IronDepositTag (it's zero-sized)
-            // It's already added by CreateEntity above
             em.SetComponentData(e, new IronDepositState
             {
                 RemainingIron = 5000, // Large amount
@@ -53,12 +52,12 @@ namespace TheWaningBorder.Resources
     public struct IronDepositState : IComponentData
     {
         public int RemainingIron;   // How much iron left
-        public byte Depleted;        // 1 if empty
+        public byte Depleted;       // 1 if empty
     }
 }
 
 /// <summary>
-/// System that handles miners gathering iron from deposits
+//— System that handles miners gathering iron from deposits
 /// Miners automatically find nearby deposits and gather iron
 /// </summary>
 [BurstCompile]
@@ -73,7 +72,7 @@ public partial struct MiningSystem : ISystem
     [BurstCompile]
     public void OnCreate(ref SystemState state)
     {
-        state.RequireForUpdate<TheWaningBorder.Humans.MinerTag>();
+        state.RequireForUpdate<MinerTag>();
     }
 
     public void OnUpdate(ref SystemState state)
@@ -81,10 +80,14 @@ public partial struct MiningSystem : ISystem
         var em = state.EntityManager;
         float dt = SystemAPI.Time.DeltaTime;
 
+        // Create an ECB that plays back at EndSimulation (so structural changes are deferred)
+        var endSimEcbSingleton = SystemAPI.GetSingleton<EndSimulationEntityCommandBufferSystem.Singleton>();
+        var ecb = endSimEcbSingleton.CreateCommandBuffer(state.WorldUnmanaged);
+
         // Process all miners
         foreach (var (minerState, transform, faction, entity) in SystemAPI
-                 .Query<RefRW<TheWaningBorder.Humans.MinerState>, RefRO<LocalTransform>, RefRO<FactionTag>>()
-                 .WithAll<TheWaningBorder.Humans.MinerTag>()
+                 .Query<RefRW<MinerState>, RefRO<LocalTransform>, RefRO<FactionTag>>()
+                 .WithAll<MinerTag>()
                  .WithEntityAccess())
         {
             ref var miner = ref minerState.ValueRW;
@@ -93,19 +96,20 @@ public partial struct MiningSystem : ISystem
 
             switch (miner.State)
             {
-                case TheWaningBorder.Humans.MinerWorkState.Idle:
+                case MinerWorkState.Idle:
+                {
                     // Find nearest iron deposit
                     Entity nearestDeposit = FindNearestDeposit(em, pos);
                     if (nearestDeposit != Entity.Null)
                     {
                         miner.AssignedDeposit = nearestDeposit;
-                        miner.State = TheWaningBorder.Humans.MinerWorkState.MovingToDeposit;
-                        
-                        // Give move command (requires movement system to handle)
+                        miner.State = MinerWorkState.MovingToDeposit;
+
+                        // Give move command (defer structural change via ECB)
                         var depositPos = em.GetComponentData<LocalTransform>(nearestDeposit).Position;
                         if (em.HasComponent<DesiredDestination>(entity))
                         {
-                            em.SetComponentData(entity, new DesiredDestination
+                            ecb.SetComponent(entity, new DesiredDestination
                             {
                                 Position = depositPos,
                                 Has = 1
@@ -113,7 +117,7 @@ public partial struct MiningSystem : ISystem
                         }
                         else
                         {
-                            em.AddComponentData(entity, new DesiredDestination
+                            ecb.AddComponent(entity, new DesiredDestination
                             {
                                 Position = depositPos,
                                 Has = 1
@@ -121,84 +125,93 @@ public partial struct MiningSystem : ISystem
                         }
                     }
                     break;
+                }
 
-                case TheWaningBorder.Humans.MinerWorkState.MovingToDeposit:
+                case MinerWorkState.MovingToDeposit:
+                {
                     // Check if reached deposit
                     if (miner.AssignedDeposit != Entity.Null && em.Exists(miner.AssignedDeposit))
                     {
                         var depositPos = em.GetComponentData<LocalTransform>(miner.AssignedDeposit).Position;
                         float dist = math.distance(pos, depositPos);
-                        
+
                         if (dist <= GatherRange)
                         {
                             // Reached deposit - start gathering
-                            miner.State = TheWaningBorder.Humans.MinerWorkState.Gathering;
+                            miner.State = MinerWorkState.Gathering;
                             miner.GatherTimer = 0f;
-                            
-                            // Stop moving
+
+                            // Stop moving (use ECB for safety)
                             if (em.HasComponent<DesiredDestination>(entity))
                             {
-                                em.SetComponentData(entity, new DesiredDestination { Has = 0 });
+                                ecb.SetComponent(entity, new DesiredDestination { Has = 0 });
                             }
                         }
                     }
                     else
                     {
                         // Deposit gone - go idle
-                        miner.State = TheWaningBorder.Humans.MinerWorkState.Idle;
+                        miner.State = MinerWorkState.Idle;
                         miner.AssignedDeposit = Entity.Null;
                     }
                     break;
+                }
 
-                case TheWaningBorder.Humans.MinerWorkState.Gathering:
+                case MinerWorkState.Gathering:
+                {
                     // Accumulate gather time
                     miner.GatherTimer += dt;
-                    
+
                     if (miner.GatherTimer >= GatherInterval)
                     {
                         // Gathered some iron
                         miner.GatherTimer = 0f;
                         miner.CurrentLoad += IronPerGather;
-                        
-                        // Check if deposit still has iron
+
+                        // Check/update deposit
                         if (miner.AssignedDeposit != Entity.Null && em.Exists(miner.AssignedDeposit))
                         {
                             if (em.HasComponent<TheWaningBorder.Resources.IronDepositState>(miner.AssignedDeposit))
                             {
                                 var depState = em.GetComponentData<TheWaningBorder.Resources.IronDepositState>(miner.AssignedDeposit);
                                 depState.RemainingIron -= IronPerGather;
-                                
+
                                 if (depState.RemainingIron <= 0)
                                 {
                                     depState.RemainingIron = 0;
                                     depState.Depleted = 1;
                                 }
-                                
+
+                                // This is NOT a structural change; SetComponentData is fine here
                                 em.SetComponentData(miner.AssignedDeposit, depState);
-                                
+
                                 // If depleted, find new deposit
                                 if (depState.Depleted == 1)
                                 {
                                     miner.AssignedDeposit = Entity.Null;
-                                    miner.State = TheWaningBorder.Humans.MinerWorkState.Idle;
+                                    miner.State = MinerWorkState.Idle;
                                 }
                             }
                         }
-                        
-                        // After gathering, immediately add iron to faction
-                        // (Simplified - no return trip needed)
+
+                        // Immediately add iron to faction (still just SetComponentData)
                         if (FactionEconomy.TryGetBank(em, fac, out var bank))
                         {
                             var resources = em.GetComponentData<FactionResources>(bank);
                             resources.Iron += IronPerGather;
                             em.SetComponentData(bank, resources);
-                            
+
                             miner.CurrentLoad = 0; // "Deposited"
                         }
                     }
                     break;
+                }
             }
         }
+
+        // No scheduled jobs writing to ECB in this version, so no AddJobHandleForProducer needed.
+        // If you later schedule jobs that write to 'ecb.AsParallelWriter()', remember to call:
+        // endSimEcbSingleton.AddJobHandleForProducer(state.Dependency);
     }
 
     /// <summary>

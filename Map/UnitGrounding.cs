@@ -3,6 +3,8 @@ using Unity.Transforms;
 using Unity.Mathematics;
 using UnityEngine;
 
+using TheWaningBorder.Factions.Humans.Era1.Units;
+
 [UpdateInGroup(typeof(SimulationSystemGroup))]
 public partial class UnitGroundingSystem : SystemBase
 {

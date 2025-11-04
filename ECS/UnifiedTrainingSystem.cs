@@ -8,7 +8,9 @@ using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
+using TheWaningBorder.Factions.Humans;
 using TheWaningBorder.Humans;
+using TheWaningBorder.Factions.Humans.Era1.Units;
 
 [BurstCompile]
 [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -23,7 +25,7 @@ public partial struct UnifiedTrainingSystem : ISystem
     [BurstCompile]
     public void OnUpdate(ref SystemState state)
     {
-        var db = TechTreeDB.Instance;
+        var db = HumanTech.Instance;
         if (db == null) return;
 
         float dt = SystemAPI.Time.DeltaTime;
@@ -163,19 +165,19 @@ public partial struct UnifiedTrainingSystem : ISystem
         switch (unitId)
         {
             case "Swordsman":
-                unit = Swordsman.Create(ecb, finalPos, fac);
+                unit = Swordsman.Create(em, finalPos, fac);
                 break;
             case "Archer":
-                unit = Archer.Create(ecb, finalPos, fac);
+                unit = Archer.Create(em, finalPos, fac);
                 break;
             case "Builder":
-                unit = TheWaningBorder.Humans.Builder.CreateWithECB(ecb, finalPos, fac);
+                unit = Builder.Create(em, finalPos, fac);
                 break;
             case "Miner":
-                unit = TheWaningBorder.Humans.Miner.CreateWithECB(ecb, finalPos, fac);
+                unit = Miner.Create(em, finalPos, fac);
                 break;
             default:
-                unit = Swordsman.Create(ecb, finalPos, fac);
+                unit = Swordsman.Create(em, finalPos, fac);
                 UnityEngine.Debug.LogWarning($"Unknown unit type: {unitId}, defaulting to Swordsman");
                 break;
         }
@@ -184,9 +186,9 @@ public partial struct UnifiedTrainingSystem : ISystem
         int popCost = GetUnitPopulationCost(unitId);
         ecb.AddComponent(unit, new PopulationCost { Amount = popCost });
 
-        // Apply stats from TechTreeDB (SetComponent assumes these components exist on the created archetype)
-        if (TechTreeDB.Instance != null &&
-            TechTreeDB.Instance.TryGetUnit(unitId, out var udef))
+        // Apply stats from HumanTech (SetComponent assumes these components exist on the created archetype)
+        if (HumanTech.Instance != null &&
+            HumanTech.Instance.TryGetUnit(unitId, out var udef))
         {
             ecb.SetComponent(unit, new Health     { Value = (int)udef.hp,   Max = (int)udef.hp });
             ecb.SetComponent(unit, new MoveSpeed  { Value = udef.speed });
@@ -227,11 +229,3 @@ public partial struct UnifiedTrainingSystem : ISystem
         }
     }
 }
-
-/*
- * INTEGRATION NOTES:
- * - EA0006 fix: HasPopulationCapacity is now an instance method (not static) so it may use SystemAPI.Query.
- * - ECB fix: use ecb.AddComponent(entity, component) instead of AddComponentData.
- * - If your created unit archetypes DON'T already include components like Health/MoveSpeed/etc.,
- *   switch those SetComponent calls to AddComponent for first-time add.
- */

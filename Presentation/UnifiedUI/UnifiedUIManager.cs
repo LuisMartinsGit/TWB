@@ -4,6 +4,7 @@
 
 using UnityEngine;
 using Unity.Entities;
+using TheWaningBorder.Player;
 
 public class UnifiedUIManager : MonoBehaviour
 {
@@ -50,7 +51,7 @@ public class UnifiedUIManager : MonoBehaviour
     /// </summary>
     public static Entity GetFirstSelectedEntity()
     {
-        var sel = RTSInput.CurrentSelection;
+        var sel = Controls.CurrentSelection;
         if (sel == null || sel.Count == 0) return Entity.Null;
         
         // Return first existing entity that belongs to the player
