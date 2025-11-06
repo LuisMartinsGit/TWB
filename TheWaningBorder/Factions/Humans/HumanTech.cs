@@ -1,6 +1,7 @@
-// TechTreeDB.cs - COMPLETE COMPREHENSIVE VERSION
-// Parses ALL buildings, units, technologies, sects, and game data from JSON
-// Replace your TechTreeDB.cs with this
+// HumanTech.cs
+// (formerly TechTreeDB.cs from your snippet) — now with lazy/early loading.
+// Parsing moved from Start() into LoadFromJsonIfNeeded(), which is called in Awake(),
+// in EnsureTechTreeDB(), and can also be called from code (e.g., Archer.Create()).
 
 using System;
 using System.Collections.Generic;
@@ -25,6 +26,8 @@ namespace TheWaningBorder.Factions.Humans
         private string _faction;
         private List<string> _resources = new();
 
+        private bool _loaded;
+
         public bool TryGetUnit(string id, out UnitDef def) => _unitsById.TryGetValue(id, out def);
         public bool TryGetBuilding(string id, out BuildingDef def) => _buildingsById.TryGetValue(id, out def);
         public bool TryGetTechnology(string id, out TechnologyDef def) => _technologiesById.TryGetValue(id, out def);
@@ -43,10 +46,24 @@ namespace TheWaningBorder.Factions.Humans
             }
             Instance = this;
             DontDestroyOnLoad(gameObject);
+
+            // Parse ASAP so data is available on frame 0 for ECS spawns.
+            LoadFromJsonIfNeeded();
         }
 
         void Start()
         {
+            // Harmless if already loaded, ensures robustness if Awake ordering changes.
+            LoadFromJsonIfNeeded();
+        }
+
+        /// <summary>
+        /// Parses the JSON exactly once. Safe to call multiple times.
+        /// </summary>
+        public void LoadFromJsonIfNeeded()
+        {
+            if (_loaded) return;
+
             if (humanTechJson == null || string.IsNullOrWhiteSpace(humanTechJson.text))
             {
                 Debug.LogError("[TechTreeDB] No JSON provided!");
@@ -157,6 +174,8 @@ namespace TheWaningBorder.Factions.Humans
                                  $"Dmg={unit.damage}, Range={unit.attackRange}, LOS={unit.lineOfSight}");
                     }
                 }
+
+                _loaded = true;
             }
             catch (Exception ex)
             {
@@ -280,6 +299,7 @@ namespace TheWaningBorder.Factions.Humans
                 damageType = ParseString(unitJson, "damageType", "melee"),
                 defense = ParseDefenseBlock(unitJson),
                 cost = ParseCostBlock(unitJson),
+                popCost = (int)ParseFloat(unitJson, "popCost", 0, 999),
                 buildSpeed = ParseFloat(unitJson, "buildSpeed", 0, 0f),
                 gatheringSpeed = ParseFloat(unitJson, "gatheringSpeed", 0, 0f),
                 carryCapacity = (int)ParseFloat(unitJson, "carryCapacity", 0, 0f),
@@ -370,7 +390,7 @@ namespace TheWaningBorder.Factions.Humans
         }
 
         // ═══════════════════════════════════════════════════════════════════════
-        // HELPER PARSERS
+        // HELPERS
         // ═══════════════════════════════════════════════════════════════════════
         DefenseBlock ParseDefenseBlock(string json)
         {
@@ -503,22 +523,27 @@ namespace TheWaningBorder.Factions.Humans
 
             return json.Substring(start + 1, end - start - 1);
         }
+
         public static void EnsureTechTreeDB()
         {
-            if (Instance != null) return;
+            if (Instance != null)
+            {
+                Instance.LoadFromJsonIfNeeded();
+                return;
+            }
 
             TextAsset json = null;
 
             string[] possiblePaths = {
-            "TechTree",
-            "Data/TechTree",
-            "JSON/TechTree",
-            "Config/TechTree"
-        };
+                "TechTree",
+                "Data/TechTree",
+                "JSON/TechTree",
+                "Config/TechTree"
+            };
 
             foreach (var path in possiblePaths)
             {
-                // 👇 disambiguate the Unity API from your property
+                // Disambiguate the Unity API from our property
                 json = UnityEngine.Resources.Load<TextAsset>(path);
                 if (json != null) break;
             }
@@ -529,8 +554,9 @@ namespace TheWaningBorder.Factions.Humans
             var db = go.AddComponent<HumanTech>();
             db.humanTechJson = json;
             DontDestroyOnLoad(go);
-        }
 
+            db.LoadFromJsonIfNeeded(); // parse immediately
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -554,6 +580,7 @@ namespace TheWaningBorder.Factions.Humans
         public float minAttackRange;
         public float lineOfSight;
         public CostBlock cost;
+        public int popCost;
 
         // Support unit fields
         public float buildSpeed;

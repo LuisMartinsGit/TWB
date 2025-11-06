@@ -14,11 +14,6 @@ MINIMAP
 [CRITICAL] Minimap click no longer moves camera
 [VISUAL]   Minimap camera shape not correct when near map edges (consider 5 points or 6)
 
-HEALTHBAR
-[IMPORTANT] All Enemy building healthbars are visible, when the building is hidden by FOW
-[IMPORTANT] All Enemy building healthbars are visible, when the building is hidden by FOW and user hovers over building
-[IMPORTANT] All Enemy units healthbars are visible, when the unit is hidden by FOW and user hovers over unit
-
 UNITS
 [CRITICAL] Move Command does not work if unit is engaged in combat.
 [CRITICAL] unit movement is flickery when many units are grouped together.

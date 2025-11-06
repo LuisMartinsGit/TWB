@@ -157,7 +157,6 @@ namespace TheWaningBorder.Gameplay
             var ironDepositPos = spawnPos + new float3(10, 0, -8);
             TheWaningBorder.Resources.IronDeposit.Create(em, ironDepositPos);
 
-            UnityEngine.Debug.Log($"Spawned iron deposit at {ironDepositPos} near {fac} Hall at {spawnPos}");
         }
 
         /// <summary>

@@ -201,3 +201,10 @@ public struct PopulationCost : IComponentData
     /// <summary>How many population slots this unit consumes</summary>
     public int Amount;
 }
+
+public struct FogVisibleTag : IComponentData {} // singleton tag
+
+public struct VisibleUnitElement : IBufferElementData
+{
+    public Entity Value;
+}

@@ -26,9 +26,8 @@ public class EntityViewManager : MonoBehaviour
 
     [Header("ERA 1 — Buildings")]
     public string E1_Hall                     = "Prefabs/Buildings/Hall";
-    public string E1_GatherersHut = "Prefabs/Buildings/GatherersHut";
-    
-    public string E1_Hut = "Prefabs/Buildings/Hut";
+    public string E1_GatherersHut             = "Prefabs/Buildings/GatherersHut";
+    public string E1_Hut                      = "Prefabs/Buildings/Hut";
     public string E1_Barracks                 = "Prefabs/Buildings/Barracks";
     public string E1_Workshop                 = "Prefabs/Buildings/Workshop";
     public string E1_Depot                    = "Prefabs/Buildings/Depot";
@@ -40,7 +39,7 @@ public class EntityViewManager : MonoBehaviour
     public string E1_Unit_Ranged              = "Prefabs/Units/Archer";
     public string E1_Unit_Siege               = "Prefabs/Units/Catapult";
     public string E1_Unit_Magic               = "Prefabs/Units/Acolyte";
-    public string E1_Unit_Builder             = "Prefabs/Units/Builder"; 
+    public string E1_Unit_Builder             = "Prefabs/Units/Builder";
 
     [Header("ERA 2 — RUNAI — Buildings")]
     public string E2_Runai_Capital            = "Prefabs/Runai/Buildings/ThessarasBazaar";
@@ -49,7 +48,7 @@ public class EntityViewManager : MonoBehaviour
     public string E2_Runai_Vault              = "Prefabs/Runai/Buildings/VaultOfAlmierra";
 
     [Header("ERA 2 — RUNAI — Units (optional overrides)")]
-    public string E2_Runai_Unit_Melee         = "";  // leave empty to use E1 defaults
+    public string E2_Runai_Unit_Melee         = "";
     public string E2_Runai_Unit_Ranged        = "";
     public string E2_Runai_Unit_Siege         = "";
     public string E2_Runai_Unit_Magic         = "";
@@ -142,6 +141,9 @@ public class EntityViewManager : MonoBehaviour
     public string Sect_Unmaker_UniqueBld      = "Prefabs/Sects/Feraldis/Unmaker/AbyssalMonolith";
     public string Sect_Unmaker_Unit           = "Prefabs/Sects/Feraldis/Unmaker/Units/VoidReaper";
 
+    [Header("RESOURCES — Nodes")] // NEW
+    public string Res_IronDeposit             = "Prefabs/Nature/IronDeposit"; // Resources/Nature/IronDeposit.prefab
+
     // ===================== RUNTIME STATE =====================
     private World _world;
     private EntityManager _em;
@@ -219,7 +221,10 @@ public class EntityViewManager : MonoBehaviour
         UnitClass uClass;
         var key = ResolveKeyFor(e, out isBuilding, out uClass);
 
+        // First try key-based, then PresentationId-based (NEW)
         GameObject prefab = LoadPrefabByKey(key);
+        if (prefab == null && TryLoadPrefabByPresentationId(e, out var byId))
+            prefab = byId;
 
         var go = prefab != null
             ? Instantiate(prefab)
@@ -240,33 +245,28 @@ public class EntityViewManager : MonoBehaviour
     }
 
     // ===================== KEY RESOLUTION ====================
-    // Helper types you likely have; if not, stub tags or adjust logic.
-    // - BuildingTag{byte IsBase}
-    // - UnitTag{UnitClass Class}
-    // - FactionProgress{byte Culture}
-    // - Various xxxTag components for specific blds/units (optional)
-
     enum Culture { None=0, Runai=1, Alanthor=2, Feraldis=3 }
 
     string ResolveKeyFor(Entity e, out bool isBuilding, out UnitClass uClass)
     {
         isBuilding = false; uClass = UnitClass.Melee;
 
-        // 2) Humans
         bool hasB = _em.HasComponent<BuildingTag>(e);
         bool hasU = _em.HasComponent<UnitTag>(e);
         Culture culture = Culture.None;
         if (_em.HasComponent<FactionProgress>(e)) culture = (Culture)_em.GetComponentData<FactionProgress>(e).Culture;
 
-        // Sect detection (optional tags)
-        int sectId = -1;
-        //if (_em.HasComponent<SectTag>(e)) sectId = _em.GetComponentData<SectTag>(e).Value;
+        // NEW: Resources / Iron Deposit via tag
+        if (_em.HasComponent<global::TheWaningBorder.Resources.IronDepositTag>(e))
+        {
+            isBuilding = true; // treat as static prop for fallback sizing only
+            return "res/iron_deposit";
+        }
 
         if (hasB)
         {
             isBuilding = true;
 
-            // Base or Capital
             var bt = _em.GetComponentData<BuildingTag>(e);
             if (bt.IsBase == 1)
             {
@@ -276,7 +276,6 @@ public class EntityViewManager : MonoBehaviour
                 return "e1/bld/hall";
             }
 
-            // Common Era1 building types by tag (adjust to your tags)
             if (_em.HasComponent<GathererHutTag>(e)) return "e1/bld/gatherer";
             if (_em.HasComponent<HutTag>(e)) return "e1/bld/hut";
             if (_em.HasComponent<BarracksTag>(e))    return "e1/bld/barracks";
@@ -286,7 +285,6 @@ public class EntityViewManager : MonoBehaviour
             if (_em.HasComponent<WallTag>(e))
                 return (culture == Culture.Alanthor) ? "e2/alanthor/bld/wall" : "e1/bld/wall";
 
-            // Era2 per culture
             if (culture == Culture.Runai)
             {
                 if (_em.HasComponent<OutpostTag>(e))  return "e2/runai/bld/outpost";
@@ -300,18 +298,12 @@ public class EntityViewManager : MonoBehaviour
             }
             else if (culture == Culture.Feraldis)
             {
-                if (_em.HasComponent<HuntingLodgeTag>(e)) return "e2/feraldis/bld/hunting";
+                if (_em.HasComponent<HuntingLodgeTag>(e))  return "e2/feraldis/bld/hunting";
                 if (_em.HasComponent<LoggingStationTag>(e))return "e2/feraldis/bld/logging";
                 if (_em.HasComponent<WarbrandFoundryTag>(e))return "e2/feraldis/bld/foundry";
             }
 
-            // Sects (chapels & unique building)
-            if (sectId >= 0)
-            {
-                if (_em.HasComponent<ChapelSmallTag>(e)) return $"sect/{sectId}/chapel_s";
-                if (_em.HasComponent<ChapelLargeTag>(e)) return $"sect/{sectId}/chapel_l";
-                if (_em.HasComponent<SectUniqueBuildingTag>(e)) return $"sect/{sectId}/unique_bld";
-            }
+            // (Optional) Sects...
 
             return "fallback/building";
         }
@@ -321,51 +313,17 @@ public class EntityViewManager : MonoBehaviour
             var ut = _em.GetComponentData<UnitTag>(e);
             uClass = ut.Class;
 
-            // Sect unique unit?
-            if (sectId >= 0 && _em.HasComponent<SectUniqueUnitTag>(e))
-                return $"sect/{sectId}/unique_unit";
-
-            // Culture overrides?
-            if (culture == Culture.Runai)
-            {
-                switch (ut.Class)
-                {
-                    case UnitClass.Melee:  if (!string.IsNullOrEmpty(E2_Runai_Unit_Melee))  return "e2/runai/unit/melee";  break;
-                    case UnitClass.Ranged: if (!string.IsNullOrEmpty(E2_Runai_Unit_Ranged)) return "e2/runai/unit/ranged"; break;
-                    case UnitClass.Siege:  if (!string.IsNullOrEmpty(E2_Runai_Unit_Siege))  return "e2/runai/unit/siege";  break;
-                    case UnitClass.Magic:  if (!string.IsNullOrEmpty(E2_Runai_Unit_Magic))  return "e2/runai/unit/magic";  break;
-                }
-            }
-            else if (culture == Culture.Alanthor)
-            {
-                switch (ut.Class)
-                {
-                    case UnitClass.Melee:  if (!string.IsNullOrEmpty(E2_Alanthor_Unit_Melee))  return "e2/alanthor/unit/melee";  break;
-                    case UnitClass.Ranged: if (!string.IsNullOrEmpty(E2_Alanthor_Unit_Ranged)) return "e2/alanthor/unit/ranged"; break;
-                    case UnitClass.Siege:  if (!string.IsNullOrEmpty(E2_Alanthor_Unit_Siege))  return "e2/alanthor/unit/siege";  break;
-                    case UnitClass.Magic:  if (!string.IsNullOrEmpty(E2_Alanthor_Unit_Magic))  return "e2/alanthor/unit/magic";  break;
-                }
-            }
-            else if (culture == Culture.Feraldis)
-            {
-                switch (ut.Class)
-                {
-                    case UnitClass.Melee:  if (!string.IsNullOrEmpty(E2_Feraldis_Unit_Melee))  return "e2/feraldis/unit/melee";  break;
-                    case UnitClass.Ranged: if (!string.IsNullOrEmpty(E2_Feraldis_Unit_Ranged)) return "e2/feraldis/unit/ranged"; break;
-                    case UnitClass.Siege:  if (!string.IsNullOrEmpty(E2_Feraldis_Unit_Siege))  return "e2/feraldis/unit/siege";  break;
-                    case UnitClass.Magic:  if (!string.IsNullOrEmpty(E2_Feraldis_Unit_Magic))  return "e2/feraldis/unit/magic";  break;
-                }
-            }
+            // (Optional) sect & culture overrides...
 
             // Era1 defaults
             switch (ut.Class)
             {
-                case UnitClass.Melee:  return "e1/unit/melee";
-                case UnitClass.Ranged: return "e1/unit/ranged";
-                case UnitClass.Siege:  return "e1/unit/siege";
-                case UnitClass.Magic:  return "e1/unit/magic";
+                case UnitClass.Melee:   return "e1/unit/melee";
+                case UnitClass.Ranged:  return "e1/unit/ranged";
+                case UnitClass.Siege:   return "e1/unit/siege";
+                case UnitClass.Magic:   return "e1/unit/magic";
                 case UnitClass.Economy: return "e1/unit/builder";
-                default: return "fallback/unit";
+                default:                return "fallback/unit";
             }
         }
 
@@ -377,7 +335,6 @@ public class EntityViewManager : MonoBehaviour
     {
         if (string.IsNullOrEmpty(key)) return null;
 
-        // Map keys -> paths
         string path = key switch
         {
             // CURSE blds
@@ -450,19 +407,15 @@ public class EntityViewManager : MonoBehaviour
             "e2/feraldis/unit/siege" => E2_Feraldis_Unit_Siege,
             "e2/feraldis/unit/magic" => E2_Feraldis_Unit_Magic,
 
-            // Sects (chapels, unique buildings, unique units)
-            // Sect IDs are mapped by number; if you prefer enums, swap this out.
-            // 0..11 mapping we’ll assume: (order given in our prior design)
-            // 0 StillFlame,1 QuietVault,2 MirrorRite,3 ShardJudgment,
-            // 4 Antiquity,5 Renewal,6 LivingStone,7 VeiledMemory,
-            // 8 EmberAsh,9 HollowBrand,10 FlameChains,11 Unmaker
-            var _ => null
+            // NEW: Resources / Iron Deposit
+            "res/iron_deposit" => Res_IronDeposit,
+
+            _ => null // FIX: valid default arm
         };
 
-        // Handle sect keys (dynamic)
+        // Dynamic sect keys (if you use them)
         if (path == null && key.StartsWith("sect/"))
         {
-            // Parse "sect/{id}/..."
             var parts = key.Split('/');
             if (parts.Length >= 3 && int.TryParse(parts[1], out int sid))
             {
@@ -476,9 +429,35 @@ public class EntityViewManager : MonoBehaviour
         if (_cache.TryGetValue(path, out var cached) && cached != null)
             return cached;
 
-        var prefab = Resources.Load<GameObject>(path);
+        var prefab = UnityEngine.Resources.Load<GameObject>(path); // explicit to avoid namespace clash
         if (prefab != null) _cache[path] = prefab;
         return prefab;
+    }
+
+    // NEW: PresentationId-based fallback loader (e.g., Iron Deposit = 301)
+    bool TryLoadPrefabByPresentationId(Entity e, out GameObject prefab)
+    {
+        prefab = null;
+        if (!_em.HasComponent<PresentationId>(e)) return false;
+
+        int id = _em.GetComponentData<PresentationId>(e).Id;
+        string path = id switch
+        {
+            301 => Res_IronDeposit, // Iron Deposit
+            _   => null
+        };
+
+        if (string.IsNullOrEmpty(path)) return false;
+
+        if (_cache.TryGetValue(path, out var cached) && cached != null)
+        {
+            prefab = cached;
+            return true;
+        }
+
+        prefab = UnityEngine.Resources.Load<GameObject>(path);
+        if (prefab != null) _cache[path] = prefab;
+        return prefab != null;
     }
 
     string ResolveSectPath(int sid, string tail)
@@ -520,23 +499,23 @@ public class EntityViewManager : MonoBehaviour
         {
             case UnitClass.Melee:
                 go = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-                go.name = "Unit_Fallback_Melee";                   // capsule
+                go.name = "Unit_Fallback_Melee";
                 go.transform.localScale = new Vector3(0.8f, 1.2f, 0.8f);
                 break;
             case UnitClass.Ranged:
                 go = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                go.name = "Unit_Fallback_Ranged";                  // vertically stretched small cube
+                go.name = "Unit_Fallback_Ranged";
                 go.transform.localScale = new Vector3(0.6f, 1.4f, 0.6f);
                 break;
             case UnitClass.Siege:
                 go = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                go.name = "Unit_Fallback_Siege";                   // small cube
+                go.name = "Unit_Fallback_Siege";
                 go.transform.localScale = new Vector3(1.2f, 0.7f, 1.2f);
                 break;
             case UnitClass.Magic:
             default:
                 go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                go.name = "Unit_Fallback_Magic";                   // sphere
+                go.name = "Unit_Fallback_Magic";
                 go.transform.localScale = new Vector3(0.9f, 0.9f, 0.9f);
                 break;
         }
@@ -562,14 +541,25 @@ public class EntityViewManager : MonoBehaviour
 
     static Color FactionColor(Faction f) => f switch
     {
-        Faction.Blue   => new Color(0.2f, 0.6f, 1f),
-        Faction.Red    => new Color(1f, 0.3f, 0.25f),
-        Faction.Green  => new Color(0.3f, 0.9f, 0.3f),
+        Faction.Blue => new Color(0.2f, 0.6f, 1f),
+        Faction.Red => new Color(1f, 0.3f, 0.25f),
+        Faction.Green => new Color(0.3f, 0.9f, 0.3f),
         Faction.Yellow => new Color(1f, 0.9f, 0.2f),
         Faction.Purple => new Color(0.7f, 0.4f, 0.9f),
         Faction.Orange => new Color(1f, 0.6f, 0.2f),
-        Faction.Teal   => new Color(0.2f, 0.9f, 0.8f),
-        Faction.White  => new Color(0.85f, 0.85f, 0.85f),
-        _              => Color.gray
+        Faction.Teal => new Color(0.2f, 0.9f, 0.8f),
+        Faction.White => new Color(0.85f, 0.85f, 0.85f),
+        _ => Color.gray
     };
+
+    // FIX: allow replacement + destroy previous fallback if present
+    public void RegisterView(Entity e, GameObject go, bool replace = true)
+    {
+        if (_views.TryGetValue(e, out var existing) && existing != null)
+        {
+            if (!replace) return;
+            Destroy(existing);
+        }
+        _views[e] = go;
+    }
 }

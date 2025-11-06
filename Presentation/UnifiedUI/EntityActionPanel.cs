@@ -23,7 +23,6 @@ public class EntityActionPanel : MonoBehaviour
     private GUIStyle _buttonStyle;
     private GUIStyle _labelStyle;
     private GUIStyle _smallStyle;
-    
     private RectOffset _padding;
     
     void Awake()

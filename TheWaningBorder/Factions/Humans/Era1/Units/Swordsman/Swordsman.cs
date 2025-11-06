@@ -1,7 +1,3 @@
-// Swordsman.cs - WITH RADIUS COMPONENT
-// Creates entity with Radius for collision/spacing
-// Replace your Swordsman.cs with this
-
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
@@ -10,27 +6,24 @@ namespace TheWaningBorder.Factions.Humans.Era1.Units
 {
     public class Swordsman
     {
-        private const float DefaultHP = 120f;
-        private const float DefaultSpeed = 5.2f;
-        private const float DefaultDamage = 10f;
-        private const float DefaultLoS = 20f;
+                public static int GetPopulationCost()
+        {
+            HumanTech.EnsureTechTreeDB();
+            var tech = HumanTech.Instance;
+            tech?.LoadFromJsonIfNeeded();
+            if (tech != null && tech.TryGetUnit("Archer", out var def)) return def.popCost;
+            else return 99999;
+        }
 
         public static Entity Create(EntityManager em, float3 pos, Faction fac)
         {
 
-            // Try to fetch the "Archer" unit from the tech DB
-            float hp = DefaultHP;
-            float speed = DefaultSpeed;
-            float damage = DefaultDamage;
-            float los = DefaultLoS;
-
-            if (HumanTech.Instance != null && HumanTech.Instance.TryGetUnit("Archer", out var def))
-            {
-                if (def.hp <= 0) hp = def.hp;
-                if (def.speed <= 0) speed = def.speed;
-                if (def.damage <= 0) damage = def.damage;
-                if (def.lineOfSight <= 0) los = def.lineOfSight;
-            }
+            // Try to fetch the "Swordsman" unit from the tech DB
+            float hp;
+            float speed;
+            float damage;
+            float los;
+            float range;
 
             var e = em.CreateEntity(
                 typeof(PresentationId),
@@ -46,18 +39,34 @@ namespace TheWaningBorder.Factions.Humans.Era1.Units
                 typeof(Radius)
             );
 
-            em.SetComponentData(e, new PresentationId { Id = 201 });
-            em.SetComponentData(e, LocalTransform.FromPositionRotationScale(pos, quaternion.identity, 1f));
-            em.SetComponentData(e, new FactionTag { Value = fac });
-            em.SetComponentData(e, new UnitTag { Class = UnitClass.Melee });
-            em.SetComponentData(e, new Health { Value = (int)hp, Max = (int)hp });
-            em.SetComponentData(e, new MoveSpeed { Value = speed });
-            em.SetComponentData(e, new Damage { Value = (int)damage });
-            em.SetComponentData(e, new LineOfSight { Radius = los});
-            em.SetComponentData(e, new Target { Value = Entity.Null });
-            em.SetComponentData(e, new AttackRange { Value = 1 });
-            em.SetComponentData(e, new Radius { Value = 0.5f });
+            HumanTech.EnsureTechTreeDB();
+            var tech = HumanTech.Instance;
+            tech?.LoadFromJsonIfNeeded();
 
+            if (HumanTech.Instance != null && HumanTech.Instance.TryGetUnit("Swordsman", out var def))
+            {
+                hp = def.hp;
+                speed = def.speed;
+                damage = def.damage;
+                los = def.lineOfSight;
+                range = def.attackRange;
+
+                em.SetComponentData(e, new PresentationId { Id = 201 });
+                em.SetComponentData(e, LocalTransform.FromPositionRotationScale(pos, quaternion.identity, 1f));
+                em.SetComponentData(e, new FactionTag { Value = fac });
+                em.SetComponentData(e, new UnitTag { Class = UnitClass.Melee });
+
+                em.SetComponentData(e, new Health { Value = (int)hp, Max = (int)hp });
+                em.SetComponentData(e, new MoveSpeed { Value = speed });
+                em.SetComponentData(e, new Damage { Value = (int)damage });
+                em.SetComponentData(e, new LineOfSight { Radius = los });
+                em.SetComponentData(e, new Radius { Value = 0.5f });
+
+                em.SetComponentData(e, new Target { Value = Entity.Null });
+                em.SetComponentData(e, new AttackRange { Value = range });
+                
+            }
+            
             return e;
         }
     }

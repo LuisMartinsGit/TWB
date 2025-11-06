@@ -9,6 +9,14 @@ namespace TheWaningBorder.Factions.Humans.Era1.Units
 {
     public static class Builder
     {
+                public static int GetPopulationCost()
+        {
+            HumanTech.EnsureTechTreeDB();
+            var tech = HumanTech.Instance;
+            tech?.LoadFromJsonIfNeeded();
+            if (tech != null && tech.TryGetUnit("Archer", out var def)) return def.popCost;
+            else return 99999;
+        }
         // Defaults if JSON is missing
         private const float DefaultHP = 60f;
         private const float DefaultSpeed = 4f;

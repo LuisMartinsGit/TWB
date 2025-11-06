@@ -8,7 +8,9 @@ using Unity.Mathematics;
 using Unity.Transforms;
 using TheWaningBorder.Factions.Humans.Era1.Units;
 using TheWaningBorder.Economy;
-
+using UnityEngine;
+using UEResources = UnityEngine.Resources;
+using UEObject    = UnityEngine.Object;
 namespace TheWaningBorder.Resources
 {
     /// <summary>
@@ -17,28 +19,82 @@ namespace TheWaningBorder.Resources
     /// </summary>
     public static class IronDeposit
     {
+            // Resources.Load expects the path relative to a Resources folder *without* "Resources/" and *without* ".prefab"
+        private const string PrefabPath = "Nature/IronDeposit";
+
         public static Entity Create(EntityManager em, float3 pos)
         {
             var e = em.CreateEntity(
                 typeof(PresentationId),
                 typeof(LocalTransform),
-                typeof(IronDepositTag),      // Tag is included in CreateEntity
+                typeof(IronDepositTag),      // zero-sized tag
                 typeof(IronDepositState),
                 typeof(Radius)
             );
 
-            em.SetComponentData(e, new PresentationId { Id = 301 }); // Iron deposit ID
+            // Keep PresentationId so existing queries/systems (like FogVisibilitySyncSystem) continue to match
+            em.SetComponentData(e, new PresentationId { Id = 301 }); 
             em.SetComponentData(e, LocalTransform.FromPositionRotationScale(pos, quaternion.identity, 0.8f));
-            // FIXED: Don't call SetComponentData on IronDepositTag (it's zero-sized)
             em.SetComponentData(e, new IronDepositState
             {
-                RemainingIron = 5000, // Large amount
+                RemainingIron = 50,
                 Depleted = 0
             });
-            em.SetComponentData(e, new Radius { Value = 1.2f }); // Larger collision radius
+            em.SetComponentData(e, new Radius { Value = 1.2f });
+
+            // === NEW: Spawn view from Resources prefab and register with EntityViewManager ===
+            // Safe-guard: only do this when running with a scene (play mode)
+            var prefab = UEResources.Load<GameObject>("Nature/IronDeposit");
+            
+            if (prefab != null)
+            {
+                var go     = UEObject.Instantiate(prefab);
+                go.name = $"IronDeposit_{e.Index}";
+                go.transform.position = pos;
+                go.transform.localScale = Vector3.one * 0.8f;
+
+                // Optional: attach a tiny link component so other code can find the entity from the GO if needed
+                var link = go.GetComponent<EntityViewLink>();
+                if (link == null) link = go.AddComponent<EntityViewLink>();
+                link.World = World.DefaultGameObjectInjectionWorld;
+                link.Entity = e;
+
+                // Register with your existing view manager so TryGetView(e, out go) works everywhere
+                var evm = Object.FindObjectOfType<EntityViewManager>();
+                if (evm != null)
+                {
+                    evm.RegisterView(e, go); // <-- add this method to your EVM if it doesn’t exist yet
+                }
+            }
+            else
+            {
+                Debug.LogWarning($"IronDeposit prefab not found at Resources/{PrefabPath}.prefab");
+            }
+            // ==============================================================================
 
             return e;
         }
+    }
+
+    /// <summary> Tag for iron deposits - ZERO SIZED (just a marker) </summary>
+    public struct IronDepositTag : IComponentData { }
+
+    /// <summary> Iron deposit state - HAS DATA </summary>
+    public struct IronDepositState : IComponentData
+    {
+        public int  RemainingIron;   // How much iron left
+        public byte Depleted;        // 1 if empty
+    }
+
+    /// <summary>
+    /// Optional helper to link a spawned GameObject to an Entity.
+    /// Keep this in any shared runtime assembly used by your view layer.
+    /// </summary>
+    public class EntityViewLink : MonoBehaviour
+    {
+        public World  World;
+        public Entity Entity;
+    }
     }
 
     /// <summary>
@@ -54,7 +110,7 @@ namespace TheWaningBorder.Resources
         public int RemainingIron;   // How much iron left
         public byte Depleted;       // 1 if empty
     }
-}
+
 
 /// <summary>
 //— System that handles miners gathering iron from deposits
