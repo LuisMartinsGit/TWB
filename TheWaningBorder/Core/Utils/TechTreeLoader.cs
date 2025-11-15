@@ -28,7 +28,7 @@ namespace TheWaningBorder.Core.Utils
             TextAsset jsonAsset = null;
             foreach (var path in paths)
             {
-                jsonAsset = Resources.Load<TextAsset>(path);
+                jsonAsset = UnityEngine.Resources.Load<TextAsset>(path);
                 if (jsonAsset != null) break;
             }
             
@@ -190,6 +190,8 @@ namespace TheWaningBorder.Core.Utils
         public float gatheringSpeed;
         public int carryCapacity;
         public float healsPerSecond;
+        internal float projectileSpeed;
+
     }
     
     [Serializable]

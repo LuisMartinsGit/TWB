@@ -16,16 +16,18 @@ namespace TheWaningBorder.Player.Selection
                 // Box selection logic would go here
             }
             
-            // Update selection visuals
+            // Update selection visuals - using proper component references
             Entities
                 .ForEach((Entity entity, in SelectableComponent selectable, in PositionComponent position) =>
                 {
                     if (selectable.IsSelected)
                     {
                         // Draw selection indicator
-                        Debug.DrawWireSphere(position.Position, selectable.SelectionRadius, Color.green);
+                        DebugExtensions.DrawWireSphere(position.Position, selectable.SelectionRadius, Color.green);
                     }
-                }).Run();
+                })
+                .WithoutBurst() // Required for Debug.DrawLine calls
+                .Run();
         }
     }
 }

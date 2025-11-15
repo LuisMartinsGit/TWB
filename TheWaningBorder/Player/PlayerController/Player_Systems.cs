@@ -2,7 +2,8 @@ using Unity.Entities;
 using Unity.Mathematics;
 using UnityEngine;
 using TheWaningBorder.Player.Selection;
-using TheWaningBorder.Core.Components;
+using TheWaningBorder.Core.GameManager;
+using TheWaningBorder.Units.Base;
 
 namespace TheWaningBorder.Player.PlayerController
 {
@@ -11,10 +12,12 @@ namespace TheWaningBorder.Player.PlayerController
     {
         private Camera _mainCamera;
         private int _localPlayerId = 0;
+        private EntityCommandBufferSystem _ecbSystem;
         
         protected override void OnCreate()
         {
             _mainCamera = Camera.main;
+            _ecbSystem = World.GetOrCreateSystemManaged<EndSimulationEntityCommandBufferSystem>();
         }
         
         protected override void OnUpdate()
@@ -62,21 +65,20 @@ namespace TheWaningBorder.Player.PlayerController
             {
                 _mainCamera.transform.position += movement;
             }
-            
-            // Zoom
-            float scroll = Input.GetAxis("Mouse ScrollWheel");
-            if (scroll != 0)
-            {
-                _mainCamera.transform.position += _mainCamera.transform.forward * scroll * 20f;
-            }
         }
         
         private void HandleLeftClick()
         {
-            Ray ray = _mainCamera.ScreenPointToRay(Input.mousePosition);
-            if (Physics.Raycast(ray, out RaycastHit hit, 1000f))
+            if (Input.GetKey(KeyCode.LeftShift))
             {
-                SelectUnit(hit.point);
+                // Add to selection
+                AddToSelection();
+            }
+            else
+            {
+                // New selection
+                ClearSelection();
+                SelectUnit();
             }
         }
         
@@ -89,37 +91,42 @@ namespace TheWaningBorder.Player.PlayerController
             }
         }
         
-        private void SelectUnit(Vector3 worldPos)
+        private void ClearSelection()
         {
-            // Copy these to locals so the lambdas don’t capture 'this'
-            var em = EntityManager;
-            int localPlayerId = _localPlayerId;
-
-            // Clear previous selection
+            var entityManager = EntityManager;
+            var ecb = _ecbSystem.CreateCommandBuffer();
+            
             Entities
                 .WithAll<SelectedTag>()
-                .WithStructuralChanges()
-                .ForEach((Entity entity, ref Core.GameManager selectable) =>
+                .WithoutBurst() // Required for EntityManager access
+                .ForEach((Entity entity, ref SelectableComponent selectable) =>
                 {
                     selectable.IsSelected = false;
-                    em.RemoveComponent<SelectedTag>(entity);
+                    ecb.RemoveComponent<SelectedTag>(entity);
                 })
                 .Run();
-
-            // Find closest selectable unit owned by local player
-            float3 clickPos = new float3(worldPos.x, worldPos.y, worldPos.z);
+        }
+        
+        private void SelectUnit()
+        {
+            Ray ray = _mainCamera.ScreenPointToRay(Input.mousePosition);
+            if (!Physics.Raycast(ray, out RaycastHit hit, 1000f)) return;
+            
+            float3 clickPos = new float3(hit.point.x, hit.point.y, hit.point.z);
             Entity closestEntity = Entity.Null;
             float closestDistance = float.MaxValue;
-
+            var localPlayerId = _localPlayerId;
+            var entityManager = EntityManager;
+            var ecb = _ecbSystem.CreateCommandBuffer();
+            
             Entities
-                .ForEach((Entity entity,
-                        in Core.GameManager.SelectableComponent selectable,
-                        in PositionComponent position,
-                        in Core.GameManager.OwnerComponent owner) =>
+                .WithoutBurst() // Required for local variables
+                .ForEach((Entity entity, ref SelectableComponent selectable, 
+                         in PositionComponent position, in OwnerComponent owner) =>
                 {
                     if (owner.PlayerId != localPlayerId)
                         return;
-
+                    
                     float distance = math.distance(clickPos, position.Position);
                     if (distance < selectable.SelectionRadius && distance < closestDistance)
                     {
@@ -128,15 +135,55 @@ namespace TheWaningBorder.Player.PlayerController
                     }
                 })
                 .Run();
-
+            
             // Apply new selection
             if (closestEntity != Entity.Null)
             {
-                em.AddComponent<SelectedTag>(closestEntity);
-
-                var selectable = em.GetComponentData<Core.GameManager.SelectableComponent>(closestEntity);
+                ecb.AddComponent<SelectedTag>(closestEntity);
+                
+                var selectable = entityManager.GetComponentData<SelectableComponent>(closestEntity);
                 selectable.IsSelected = true;
-                em.SetComponentData(closestEntity, selectable);
+                entityManager.SetComponentData(closestEntity, selectable);
+            }
+        }
+        
+        private void AddToSelection()
+        {
+            Ray ray = _mainCamera.ScreenPointToRay(Input.mousePosition);
+            if (!Physics.Raycast(ray, out RaycastHit hit, 1000f)) return;
+            
+            float3 clickPos = new float3(hit.point.x, hit.point.y, hit.point.z);
+            Entity closestEntity = Entity.Null;
+            float closestDistance = float.MaxValue;
+            var localPlayerId = _localPlayerId;
+            var entityManager = EntityManager;
+            var ecb = _ecbSystem.CreateCommandBuffer();
+            
+            Entities
+                .WithNone<SelectedTag>()
+                .WithoutBurst()
+                .ForEach((Entity entity, ref SelectableComponent selectable, 
+                         in PositionComponent position, in OwnerComponent owner) =>
+                {
+                    if (owner.PlayerId != localPlayerId)
+                        return;
+                    
+                    float distance = math.distance(clickPos, position.Position);
+                    if (distance < selectable.SelectionRadius && distance < closestDistance)
+                    {
+                        closestDistance = distance;
+                        closestEntity = entity;
+                    }
+                })
+                .Run();
+            
+            if (closestEntity != Entity.Null)
+            {
+                ecb.AddComponent<SelectedTag>(closestEntity);
+                
+                var selectable = entityManager.GetComponentData<SelectableComponent>(closestEntity);
+                selectable.IsSelected = true;
+                entityManager.SetComponentData(closestEntity, selectable);
             }
         }
         
@@ -150,7 +197,8 @@ namespace TheWaningBorder.Player.PlayerController
                 {
                     movement.Destination = targetPos;
                     movement.IsMoving = true;
-                }).Run();
+                })
+                .Schedule();
         }
     }
 }

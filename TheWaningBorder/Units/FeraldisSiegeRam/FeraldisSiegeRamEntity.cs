@@ -11,7 +11,7 @@ namespace TheWaningBorder.Units.FeraldisSiegeRam
     /// Entity definition for Feraldis_SiegeRam unit
     /// All values MUST be loaded from TechTree.json - NO HARDCODED VALUES!
     /// </summary>
-    public class FeraldisSiegeRamEntity : DataLoaderSystem
+    public partial class FeraldisSiegeRamEntity : DataLoaderSystem
     {
         private EntityArchetype feraldissiegeramArchetype;
 
@@ -110,5 +110,11 @@ namespace TheWaningBorder.Units.FeraldisSiegeRam
 
             return entity;
         }
+
+        protected override void OnUpdate()
+        {
+            throw new NotImplementedException();
+        }
+
     }
 }

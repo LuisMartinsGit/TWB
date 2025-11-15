@@ -11,7 +11,7 @@ namespace TheWaningBorder.Units.RunaiEscort
     /// Entity definition for Runai_Escort unit
     /// All values MUST be loaded from TechTree.json - NO HARDCODED VALUES!
     /// </summary>
-    public class RunaiEscortEntity : DataLoaderSystem
+    public partial class RunaiEscortEntity : DataLoaderSystem
     {
         private EntityArchetype runaiescortArchetype;
 
@@ -110,5 +110,11 @@ namespace TheWaningBorder.Units.RunaiEscort
 
             return entity;
         }
+
+        protected override void OnUpdate()
+        {
+            throw new NotImplementedException();
+        }
+
     }
 }

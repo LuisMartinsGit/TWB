@@ -11,7 +11,7 @@ namespace TheWaningBorder.Units.Miner
     /// Entity definition for Miner unit
     /// All values MUST be loaded from TechTree.json - NO HARDCODED VALUES!
     /// </summary>
-    public class MinerEntity : DataLoaderSystem
+    public partial class MinerEntity : DataLoaderSystem
     {
         private EntityArchetype minerArchetype;
 
@@ -110,5 +110,11 @@ namespace TheWaningBorder.Units.Miner
 
             return entity;
         }
+
+        protected override void OnUpdate()
+        {
+            throw new NotImplementedException();
+        }
+
     }
 }

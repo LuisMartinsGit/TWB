@@ -27,9 +27,9 @@ namespace TheWaningBorder.UI.MainMenu
             GUILayout.Label("Game Mode:");
             if (GUILayout.Button(GameSettings.Mode.ToString()))
             {
-                GameSettings.Mode = GameSettings.Mode == GameManager.GameMode.SoloVsCurse 
-                    ? GameManager.GameMode.FreeForAll 
-                    : GameManager.GameMode.SoloVsCurse;
+                GameSettings.Mode = GameSettings.Mode == GameMode.SoloVsCurse 
+                    ? GameMode.FreeForAll 
+                    : GameMode.SoloVsCurse;
             }
             
             // Player Count

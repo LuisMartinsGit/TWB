@@ -1,4 +1,5 @@
 using System;
+using Unity.Collections;
 using Unity.Entities;
 using UnityEngine;
 
@@ -26,12 +27,12 @@ namespace TheWaningBorder.Units.Miner
     /// Gatherer-specific component for Miner
     /// </summary>
     [Serializable]
-    public struct MinerGathererComponent
+    public struct MinerGathererComponent : IComponentData
     {
         public float GatheringSpeed { get; set; }
         public int CarryCapacity { get; set; }
         public int CurrentCarryAmount { get; set; }
-        public string ResourceType { get; set; }
+        public FixedString64Bytes ResourceType { get; set; }
     }
 
     /// <summary>

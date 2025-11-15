@@ -1,49 +1,40 @@
-using System;
 using Unity.Entities;
 using Unity.Mathematics;
-using UnityEngine;
+using Unity.Collections;
 using TheWaningBorder.Core.Components;
 using TheWaningBorder.Core.Systems;
 
 namespace TheWaningBorder.Units.Miner
 {
-    /// <summary>
-    /// System for handling Miner resource gathering
-    /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
-    public class MinerGatheringSystem : DataLoaderSystem
+    public partial class MinerGatheringSystem : DataLoaderSystem
     {
         protected override void OnUpdate()
         {
-            float deltaTime = Time.DeltaTime;
-            
+            float deltaTime = World.Time.DeltaTime;
+
             Entities
                 .WithAll<MinerTag, MinerGathererComponent>()
-                .ForEach((Entity entity, ref MinerGathererComponent gatherer) =>
+                .ForEach((ref MinerGathererComponent gatherer) =>
                 {
-                    if (!string.IsNullOrEmpty(gatherer.ResourceType))
-                    {
-                        // Gather resources using speed from JSON
-                        var gatherAmount = gatherer.GatheringSpeed * deltaTime;
-                        gatherer.CurrentCarryAmount = Mathf.Min(
-                            gatherer.CurrentCarryAmount + (int)gatherAmount,
-                            gatherer.CarryCapacity
-                        );
-                        
-                        if (gatherer.CurrentCarryAmount >= gatherer.CarryCapacity)
-                        {
-                            // Return to drop-off point
-                            ReturnResources(gatherer);
-                        }
-                    }
-                }).Schedule();
-        }
+                    // assuming ResourceType is a FixedString, not a C# string (see below)
+                    if (gatherer.ResourceType.Length == 0)
+                        return;
 
-        private void ReturnResources(MinerGathererComponent gatherer)
-        {
-            // Handle resource return based on JSON data
-            Debug.Log($"Returning {gatherer.CurrentCarryAmount} {gatherer.ResourceType}");
-            gatherer.CurrentCarryAmount = 0;
+                    float gatherAmount = gatherer.GatheringSpeed * deltaTime;
+
+                    int newCarry = gatherer.CurrentCarryAmount + (int)gatherAmount;
+                    if (newCarry >= gatherer.CarryCapacity)
+                    {
+                        // here you'd normally "bank" the resources on some player/base,
+                        // but inside this job we just reset the carried amount
+                        newCarry = 0;
+                    }
+
+                    // clamp
+                    gatherer.CurrentCarryAmount = math.min(newCarry, gatherer.CarryCapacity);
+                })
+                .Schedule();
         }
     }
 }

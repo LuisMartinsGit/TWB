@@ -1,173 +1,169 @@
-using System;
-using UnityEngine;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Collections;
-using TheWaningBorder.Core.Settings;
+using UnityEngine;
 using TheWaningBorder.Core.Utils;
+using TheWaningBorder.Units.Base;
+using TheWaningBorder.Buildings.Base;
 using TheWaningBorder.Resources.IronMining;
-using TheWaningBorder.Map.FogOfWar;
-using TheWaningBorder.Map.Terrain;
-using TheWaningBorder.Player.PlayerController;
 
 namespace TheWaningBorder.Core.GameManager
 {
-    [DefaultExecutionOrder(-1000)]
-    public class GameManager_Bootstrap : MonoBehaviour
+    public class GameManager_Bootstrap : ICustomBootstrap
     {
-        private static GameManager_Bootstrap _instance;
-        public static GameManager_Bootstrap Instance => _instance;
-
-        private World _gameWorld;
-        private EntityManager _entityManager;
-        
-        [Header("Configuration")]
-        public bool validateDataOnStart = true;
-        public bool enableDebugLogging = false;
-        
-        private void Awake()
+        public bool Initialize(string defaultWorldName)
         {
-            if (_instance != null && _instance != this)
+            // Load TechTree first - this is critical!
+            if (!TechTreeLoader.LoadTechTree())
             {
-                Destroy(gameObject);
-                return;
+                Debug.LogError("[Bootstrap] Failed to load TechTree.json - cannot start game!");
+                return false;
             }
-            _instance = this;
-            DontDestroyOnLoad(gameObject);
             
-            InitializeWorld();
+            Debug.Log("[Bootstrap] TechTree loaded successfully");
+            
+            // Create default world
+            var world = new World(defaultWorldName);
+            World.DefaultGameObjectInjectionWorld = world;
+            
+            // Create core systems
+            var systems = DefaultWorldInitialization.GetAllSystems(WorldSystemFilterFlags.Default);
+            DefaultWorldInitialization.AddSystemsToRootLevelSystemGroups(world, systems);
+            
+            // Initialize game state
+            InitializeGameState(world);
+            
+            // Spawn initial entities for testing
+            SpawnInitialEntities(world);
+            
+            ScriptBehaviourUpdateOrder.AppendWorldToCurrentPlayerLoop(world);
+            
+            return true;
         }
-
-        private void InitializeWorld()
+        
+        private void InitializeGameState(World world)
         {
-            Debug.Log("[GameManager] Initializing game world...");
+            var entityManager = world.EntityManager;
             
-            try
+            // Create game state entity
+            var gameStateEntity = entityManager.CreateEntity();
+            entityManager.AddComponentData(gameStateEntity, new GameStateComponent
             {
-                // Load TechTree data
-                if (!TechTreeLoader.LoadTechTree())
+                CurrentEra = 1,
+                GameTime = 0f,
+                IsPaused = false,
+                Mode = GameMode.SoloVsCurse
+            });
+            
+            // Create player entities
+            CreatePlayer(entityManager, 0, "Player 1", true);
+            CreatePlayer(entityManager, 1, "AI Player", false);
+            
+            Debug.Log("[Bootstrap] Game state initialized");
+        }
+        
+        private void CreatePlayer(EntityManager entityManager, int playerId, string playerName, bool isHuman)
+        {
+            var playerEntity = entityManager.CreateEntity();
+            
+            entityManager.AddComponentData(playerEntity, new PlayerComponent
+            {
+                PlayerId = playerId,
+                TeamId = playerId,
+                IsHuman = isHuman,
+                IsAlive = true,
+                PlayerName = new FixedString64Bytes(playerName),
+                SelectedCulture = new FixedString64Bytes("Default"),
+                CurrentEra = 1
+            });
+            
+            entityManager.AddComponentData(playerEntity, new ResourcesComponent
+            {
+                Supplies = 1000,
+                Iron = 200,
+                Crystal = 0,
+                Veilsteel = 0,
+                Glow = 0,
+                Population = 0,
+                PopulationMax = 20
+            });
+            
+            Debug.Log($"[Bootstrap] Created player: {playerName} (ID: {playerId})");
+        }
+        
+        private void SpawnInitialEntities(World world)
+        {
+            var entityManager = world.EntityManager;
+            
+            // Spawn some test units for player 0
+            float3 startPos = new float3(0, 0, 0);
+            
+            // Create a few test units
+            for (int i = 0; i < 3; i++)
+            {
+                var unitEntity = entityManager.CreateEntity();
+                float3 unitPos = startPos + new float3(i * 2, 0, 0);
+                
+                entityManager.AddComponentData(unitEntity, new PositionComponent
                 {
-                    throw new Exception("Failed to load TechTree.json!");
-                }
+                    Position = unitPos
+                });
                 
-                // Get or create ECS world
-                _gameWorld = World.DefaultGameObjectInjectionWorld ?? new World("GameWorld");
-                _entityManager = _gameWorld.EntityManager;
+                entityManager.AddComponentData(unitEntity, new HealthComponent
+                {
+                    CurrentHp = 100,
+                    MaxHp = 100,
+                    RegenRate = 0
+                });
                 
-                // Register all systems
-                RegisterCoreSystems();
-                RegisterResourceSystems();
-                RegisterUnitSystems();
-                RegisterBuildingSystems();
-                RegisterMapSystems();
-                RegisterPlayerSystems();
-                RegisterAISystems();
+                entityManager.AddComponentData(unitEntity, new MovementComponent
+                {
+                    Destination = unitPos,
+                    Speed = 5f,
+                    IsMoving = false,
+                    StoppingDistance = 1f
+                });
                 
-                // Initialize game
-                InitializeGame();
+                entityManager.AddComponentData(unitEntity, new OwnerComponent
+                {
+                    PlayerId = 0
+                });
                 
-                Debug.Log("[GameManager] Game world initialized successfully!");
+                entityManager.AddComponentData(unitEntity, new SelectableComponent
+                {
+                    IsSelected = false,
+                    SelectionRadius = 1.5f
+                });
+                
+                entityManager.AddComponentData(unitEntity, new CommandableComponent
+                {
+                    CanMove = true,
+                    CanAttack = true,
+                    CanBuild = false,
+                    CanGather = false
+                });
             }
-            catch (Exception e)
-            {
-                Debug.LogError($"[GameManager] Critical initialization error: {e.Message}\n{e.StackTrace}");
-                #if !UNITY_EDITOR
-                Application.Quit();
-                #endif
-            }
-        }
-
-        private void RegisterCoreSystems()
-        {
-            _gameWorld.GetOrCreateSystemManaged<GameStateSystem>();
-            _gameWorld.GetOrCreateSystemManaged<TimeSystem>();
-        }
-
-        private void RegisterResourceSystems()
-        {
-            _gameWorld.GetOrCreateSystemManaged<IronDepositGenerationSystem>();
-            _gameWorld.GetOrCreateSystemManaged<MinerTargetingSystem>();
-            _gameWorld.GetOrCreateSystemManaged<MiningSystem>();
-            _gameWorld.GetOrCreateSystemManaged<OreDeliverySystem>();
-            _gameWorld.GetOrCreateSystemManaged<ResourceManagerSystem>();
-        }
-
-        private void RegisterUnitSystems()
-        {
-            _gameWorld.GetOrCreateSystemManaged<UnitMovementSystem>();
-            _gameWorld.GetOrCreateSystemManaged<UnitCombatSystem>();
-            _gameWorld.GetOrCreateSystemManaged<UnitHealthSystem>();
-            _gameWorld.GetOrCreateSystemManaged<ProjectileSystem>();
-        }
-
-        private void RegisterBuildingSystems()
-        {
-            _gameWorld.GetOrCreateSystemManaged<BuildingConstructionSystem>();
-            _gameWorld.GetOrCreateSystemManaged<BuildingHealthSystem>();
-            _gameWorld.GetOrCreateSystemManaged<TrainingQueueSystem>();
-        }
-
-        private void RegisterMapSystems()
-        {
-            _gameWorld.GetOrCreateSystemManaged<TerrainGenerationSystem>();
-            _gameWorld.GetOrCreateSystemManaged<FogUpdateSystem>();
-            _gameWorld.GetOrCreateSystemManaged<FogRenderSystem>();
-            _gameWorld.GetOrCreateSystemManaged<SpawnSystem>();
-        }
-
-        private void RegisterPlayerSystems()
-        {
-            _gameWorld.GetOrCreateSystemManaged<PlayerControllerSystem>();
-            _gameWorld.GetOrCreateSystemManaged<SelectionSystem>();
-            _gameWorld.GetOrCreateSystemManaged<CommandSystem>();
-        }
-
-        private void RegisterAISystems()
-        {
-            _gameWorld.GetOrCreateSystemManaged<PathfindingSystem>();
-            _gameWorld.GetOrCreateSystemManaged<AIControllerSystem>();
-        }
-
-        private void InitializeGame()
-        {
-            // Generate map
-            var terrainSystem = _gameWorld.GetExistingSystemManaged<TerrainGenerationSystem>();
-            terrainSystem?.GenerateTerrain();
             
-            // Generate resource deposits
-            var ironSystem = _gameWorld.GetExistingSystemManaged<IronDepositGenerationSystem>();
-            ironSystem?.GenerateInitialDeposits();
-            
-            // Initialize fog of war
-            var fogSystem = _gameWorld.GetExistingSystemManaged<FogUpdateSystem>();
-            fogSystem?.InitializeFog();
-            
-            // Spawn players
-            SpawnPlayers();
-        }
-
-        private void SpawnPlayers()
-        {
-            var spawnSystem = _gameWorld.GetExistingSystemManaged<SpawnSystem>();
-            if (spawnSystem == null) return;
-
-            int playerCount = GameSettings.TotalPlayers;
-            for (int i = 0; i < playerCount; i++)
+            // Spawn some iron deposits
+            for (int i = 0; i < 5; i++)
             {
-                bool isHuman = (i == 0); // First player is human
-                spawnSystem.SpawnPlayer(i, isHuman);
+                var depositEntity = entityManager.CreateEntity();
+                float3 depositPos = new float3(10 + i * 5, 0, 10);
+                
+                entityManager.AddComponentData(depositEntity, new PositionComponent
+                {
+                    Position = depositPos
+                });
+                
+                entityManager.AddComponentData(depositEntity, new IronDepositComponent
+                {
+                    RemainingOre = 5000,
+                    ClaimedByMiner = Entity.Null,
+                    MiningRadius = 2f
+                });
             }
-        }
-
-        public EntityManager GetEntityManager() => _entityManager;
-        public World GetWorld() => _gameWorld;
-
-        private void OnDestroy()
-        {
-            if (_gameWorld != null && _gameWorld.IsCreated)
-            {
-                _gameWorld.Dispose();
-            }
+            
+            Debug.Log("[Bootstrap] Initial entities spawned");
         }
     }
 }

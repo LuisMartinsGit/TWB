@@ -48,8 +48,7 @@ namespace TheWaningBorder.Buildings.Hall
             // Owner
             entityManager.AddComponentData(entity, new OwnerComponent
             {
-                PlayerId = playerId,
-                TeamId = playerId
+                PlayerId = playerId
             });
             
             // Production capability

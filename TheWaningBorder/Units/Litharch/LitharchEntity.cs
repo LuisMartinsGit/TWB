@@ -11,7 +11,7 @@ namespace TheWaningBorder.Units.Litharch
     /// Entity definition for Litharch unit
     /// All values MUST be loaded from TechTree.json - NO HARDCODED VALUES!
     /// </summary>
-    public class LitharchEntity : DataLoaderSystem
+    public partial class LitharchEntity : DataLoaderSystem
     {
         private EntityArchetype litharchArchetype;
 
@@ -110,5 +110,11 @@ namespace TheWaningBorder.Units.Litharch
 
             return entity;
         }
+
+        protected override void OnUpdate()
+        {
+            throw new NotImplementedException();
+        }
+
     }
 }

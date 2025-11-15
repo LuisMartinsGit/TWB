@@ -26,7 +26,7 @@ namespace TheWaningBorder.Units.Litharch
     /// Healer-specific component for Litharch
     /// </summary>
     [Serializable]
-    public struct LitharchHealerComponent
+    public struct LitharchHealerComponent : IComponentData
     {
         public float HealsPerSecond { get; set; }
         public float HealRange { get; set; }

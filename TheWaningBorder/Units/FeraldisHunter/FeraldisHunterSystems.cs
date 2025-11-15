@@ -1,7 +1,5 @@
-using System;
 using Unity.Entities;
 using Unity.Mathematics;
-using UnityEngine;
 using TheWaningBorder.Core.Components;
 using TheWaningBorder.Core.Systems;
 
@@ -11,42 +9,59 @@ namespace TheWaningBorder.Units.FeraldisHunter
     /// System for handling Feraldis_Hunter projectile attacks
     /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
-    public class FeraldisHunterProjectileSystem : DataLoaderSystem
+    public partial class FeraldisHunterProjectileSystem : DataLoaderSystem
     {
-        protected override void OnUpdate()
+        private EndSimulationEntityCommandBufferSystem _endSimEcbSystem;
+
+        protected override void OnCreate()
         {
-            Entities
-                .WithAll<FeraldisHunterTag>()
-                .ForEach((Entity entity, ref AttackComponent attack, in PositionComponent position) =>
-                {
-                    // Create projectile when attacking
-                    // All projectile parameters from TechTree.json
-                    if (attack.DamageType == "ranged")
-                    {
-                        CreateProjectile(entity, attack, position);
-                    }
-                }).Schedule();
+            base.OnCreate();
+            _endSimEcbSystem = World.GetOrCreateSystemManaged<EndSimulationEntityCommandBufferSystem>();
         }
 
-        private void CreateProjectile(Entity attacker, AttackComponent attack, PositionComponent position)
+        protected override void OnUpdate()
         {
+            // 1. Get data from JSON on the main thread (safe to use 'this' here)
             var unitData = GetUnitData("Feraldis_Hunter");
-            
-            // Create projectile entity with data from JSON
-            var projectile = EntityManager.CreateEntity(
-                typeof(ProjectileComponent),
-                typeof(PositionComponent)
-            );
-            
-            // Set projectile data from JSON - no hardcoded values!
-            EntityManager.SetComponentData(projectile, new ProjectileComponent
-            {
-                StartPosition = position.Position,
-                TargetPosition = position.Position, // Would be set to actual target
-                Speed = unitData.projectileSpeed > 0 ? unitData.projectileSpeed : 20f,
-                Damage = attack.Damage,
-                DamageType = attack.DamageType
-            });
+            float projectileSpeed = unitData.projectileSpeed > 0 ? unitData.projectileSpeed : 20f;
+
+            // 2. Create ECB for structural changes inside the job
+            var ecb = _endSimEcbSystem.CreateCommandBuffer().AsParallelWriter();
+
+            // 3. Burst/job-friendly ForEach (no EntityManager, no instance methods)
+            Entities
+                .WithAll<FeraldisHunterTag>()
+                .ForEach((Entity entity,
+                          int entityInQueryIndex,
+                          in AttackComponent attack,
+                          in PositionComponent position) =>
+                {
+                    // DamageType should ideally be a FixedString, not a C# string
+                    if (attack.DamageType != "ranged")
+                        return;
+
+                    // Create projectile via ECB instead of EntityManager
+                    var projectile = ecb.CreateEntity(entityInQueryIndex);
+
+                    ecb.AddComponent(entityInQueryIndex, projectile, new ProjectileComponent
+                    {
+                        StartPosition  = position.Position,
+                        TargetPosition = position.Position,    // TODO: set to actual target later
+                        Speed          = projectileSpeed,
+                        Damage         = attack.Damage,
+                        DamageType     = attack.DamageType
+                    });
+
+                    // If your projectile also needs PositionComponent:
+                    ecb.AddComponent(entityInQueryIndex, projectile, new PositionComponent
+                    {
+                        Position = position.Position
+                    });
+                })
+                .ScheduleParallel();
+
+            // 4. Make sure ECB playback waits for this job
+            _endSimEcbSystem.AddJobHandleForProducer(Dependency);
         }
     }
 }

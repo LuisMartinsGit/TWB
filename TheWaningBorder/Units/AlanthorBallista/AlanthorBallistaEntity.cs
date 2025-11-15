@@ -11,7 +11,7 @@ namespace TheWaningBorder.Units.AlanthorBallista
     /// Entity definition for Alanthor_Ballista unit
     /// All values MUST be loaded from TechTree.json - NO HARDCODED VALUES!
     /// </summary>
-    public class AlanthorBallistaEntity : DataLoaderSystem
+    public partial class AlanthorBallistaEntity : DataLoaderSystem
     {
         private EntityArchetype alanthorballistaArchetype;
 
@@ -110,5 +110,11 @@ namespace TheWaningBorder.Units.AlanthorBallista
 
             return entity;
         }
+
+        protected override void OnUpdate()
+        {
+            throw new NotImplementedException();
+        }
+
     }
 }

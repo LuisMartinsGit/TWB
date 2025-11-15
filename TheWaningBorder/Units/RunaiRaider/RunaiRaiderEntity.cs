@@ -11,7 +11,7 @@ namespace TheWaningBorder.Units.RunaiRaider
     /// Entity definition for Runai_Raider unit
     /// All values MUST be loaded from TechTree.json - NO HARDCODED VALUES!
     /// </summary>
-    public class RunaiRaiderEntity : DataLoaderSystem
+    public partial class RunaiRaiderEntity : DataLoaderSystem
     {
         private EntityArchetype runairaiderArchetype;
 
@@ -110,5 +110,11 @@ namespace TheWaningBorder.Units.RunaiRaider
 
             return entity;
         }
+
+        protected override void OnUpdate()
+        {
+            throw new NotImplementedException();
+        }
+
     }
 }

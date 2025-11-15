@@ -3,69 +3,44 @@ using Unity.Mathematics;
 using UnityEngine;
 using TheWaningBorder.Core.GameManager;
 
-namespace TheWaningBorder.Resources
+namespace TheWaningBorder.Resources.ResourceManager
 {
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     public partial class ResourceManagerSystem : SystemBase
     {
         protected override void OnUpdate()
         {
-            // Update resource generation from buildings
             float deltaTime = SystemAPI.Time.DeltaTime;
             
+            // Update resource display
             Entities
                 .ForEach((Entity entity, ref ResourcesComponent resources, in PlayerComponent player) =>
                 {
-                    // Passive resource generation could go here
-                    // For now, resources are only gained through mining and other explicit actions
-                }).Schedule();
-        }
-        
-        public static bool CanAfford(EntityManager entityManager, Entity playerEntity, 
-                                     int supplies, int iron, int crystal = 0, int veilsteel = 0, int glow = 0)
-        {
-            if (!entityManager.HasComponent<ResourcesComponent>(playerEntity))
-                return false;
+                    if (player.IsHuman)
+                    {
+                        // This would typically update UI
+                        // For now, just log periodically
+                        if (UnityEngine.Random.Range(0f, 1f) < 0.01f) // Log occasionally
+                        {
+                            Debug.Log($"[Resources] Player {player.PlayerId}: Supplies={resources.Supplies}, Iron={resources.Iron}");
+                        }
+                    }
+                })
+                .WithoutBurst() // Required for Debug.Log
+                .Run();
             
-            var resources = entityManager.GetComponentData<ResourcesComponent>(playerEntity);
-            
-            return resources.Supplies >= supplies &&
-                   resources.Iron >= iron &&
-                   resources.Crystal >= crystal &&
-                   resources.Veilsteel >= veilsteel &&
-                   resources.Glow >= glow;
-        }
-        
-        public static bool SpendResources(EntityManager entityManager, Entity playerEntity, 
-                                          int supplies, int iron, int crystal = 0, int veilsteel = 0, int glow = 0)
-        {
-            if (!CanAfford(entityManager, playerEntity, supplies, iron, crystal, veilsteel, glow))
-                return false;
-            
-            var resources = entityManager.GetComponentData<ResourcesComponent>(playerEntity);
-            resources.Supplies -= supplies;
-            resources.Iron -= iron;
-            resources.Crystal -= crystal;
-            resources.Veilsteel -= veilsteel;
-            resources.Glow -= glow;
-            entityManager.SetComponentData(playerEntity, resources);
-            
-            return true;
-        }
-        
-        public static void AddResources(EntityManager entityManager, Entity playerEntity, 
-                                        int supplies = 0, int iron = 0, int crystal = 0, int veilsteel = 0, int glow = 0)
-        {
-            if (!entityManager.HasComponent<ResourcesComponent>(playerEntity))
-                return;
-            
-            var resources = entityManager.GetComponentData<ResourcesComponent>(playerEntity);
-            resources.Supplies += supplies;
-            resources.Iron += iron;
-            resources.Crystal += crystal;
-            resources.Veilsteel += veilsteel;
-            resources.Glow += glow;
-            entityManager.SetComponentData(playerEntity, resources);
+            // Check for resource overflow
+            Entities
+                .ForEach((Entity entity, ref ResourcesComponent resources) =>
+                {
+                    const int maxResources = 999999;
+                    resources.Supplies = math.min(resources.Supplies, maxResources);
+                    resources.Iron = math.min(resources.Iron, maxResources);
+                    resources.Crystal = math.min(resources.Crystal, maxResources);
+                    resources.Veilsteel = math.min(resources.Veilsteel, maxResources);
+                    resources.Glow = math.min(resources.Glow, maxResources);
+                })
+                .Schedule();
         }
     }
 }

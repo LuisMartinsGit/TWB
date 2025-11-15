@@ -11,7 +11,7 @@ namespace TheWaningBorder.Units.RunaiSkirmisher
     /// Entity definition for Runai_Skirmisher unit
     /// All values MUST be loaded from TechTree.json - NO HARDCODED VALUES!
     /// </summary>
-    public class RunaiSkirmisherEntity : DataLoaderSystem
+    public partial class RunaiSkirmisherEntity : DataLoaderSystem
     {
         private EntityArchetype runaiskirmisherArchetype;
 
@@ -110,5 +110,11 @@ namespace TheWaningBorder.Units.RunaiSkirmisher
 
             return entity;
         }
+
+        protected override void OnUpdate()
+        {
+            throw new NotImplementedException();
+        }
+
     }
 }

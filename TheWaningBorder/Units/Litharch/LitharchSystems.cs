@@ -1,7 +1,5 @@
-using System;
 using Unity.Entities;
 using Unity.Mathematics;
-using UnityEngine;
 using TheWaningBorder.Core.Components;
 using TheWaningBorder.Core.Systems;
 
@@ -11,35 +9,35 @@ namespace TheWaningBorder.Units.Litharch
     /// System for handling Litharch healing abilities
     /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
-    public class LitharchHealingSystem : DataLoaderSystem
+    public partial class LitharchHealingSystem : DataLoaderSystem
     {
         protected override void OnUpdate()
         {
-            float deltaTime = Time.DeltaTime;
-            
+            float deltaTime = World.Time.DeltaTime;
+
+            // Lookup for HealthComponent (read/write = false)
+            var healthLookup = GetComponentLookup<HealthComponent>(isReadOnly: false);
+
             Entities
                 .WithAll<LitharchTag, LitharchHealerComponent>()
-                .ForEach((Entity entity, ref LitharchHealerComponent healer, in PositionComponent position) =>
+                // We're writing through the lookup, so disable safety restriction for this job copy
+                .WithNativeDisableContainerSafetyRestriction(healthLookup)
+                .ForEach((ref LitharchHealerComponent healer, in PositionComponent position) =>
                 {
-                    // Find nearby wounded allies
-                    var healAmount = healer.HealsPerSecond * deltaTime;
-                    
-                    // Apply healing to target based on JSON values
-                    if (healer.CurrentHealTarget != Entity.Null)
-                    {
-                        ApplyHealing(healer.CurrentHealTarget, healAmount);
-                    }
-                }).Schedule();
-        }
+                    if (healer.CurrentHealTarget == Entity.Null)
+                        return;
 
-        private void ApplyHealing(Entity target, float amount)
-        {
-            if (EntityManager.HasComponent<HealthComponent>(target))
-            {
-                var health = EntityManager.GetComponentData<HealthComponent>(target);
-                health.CurrentHp = Mathf.Min(health.CurrentHp + amount, health.MaxHp);
-                EntityManager.SetComponentData(target, health);
-            }
+                    if (!healthLookup.HasComponent(healer.CurrentHealTarget))
+                        return;
+
+                    var health = healthLookup[healer.CurrentHealTarget];
+
+                    float healAmount = healer.HealsPerSecond * deltaTime;
+                    health.CurrentHp = math.min(health.CurrentHp + healAmount, health.MaxHp);
+
+                    healthLookup[healer.CurrentHealTarget] = health;
+                })
+                .Schedule();
         }
     }
 }

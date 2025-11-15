@@ -11,7 +11,7 @@ namespace TheWaningBorder.Units.FeraldisWarboarRider
     /// Entity definition for Feraldis_WarboarRider unit
     /// All values MUST be loaded from TechTree.json - NO HARDCODED VALUES!
     /// </summary>
-    public class FeraldisWarboarRiderEntity : DataLoaderSystem
+    public partial class FeraldisWarboarRiderEntity : DataLoaderSystem
     {
         private EntityArchetype feraldiswarboarriderArchetype;
 
@@ -110,5 +110,11 @@ namespace TheWaningBorder.Units.FeraldisWarboarRider
 
             return entity;
         }
+
+        protected override void OnUpdate()
+        {
+            throw new NotImplementedException();
+        }
+
     }
 }

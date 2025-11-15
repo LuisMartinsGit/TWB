@@ -11,7 +11,7 @@ namespace TheWaningBorder.Units.AlanthorCataphract
     /// Entity definition for Alanthor_Cataphract unit
     /// All values MUST be loaded from TechTree.json - NO HARDCODED VALUES!
     /// </summary>
-    public class AlanthorCataphractEntity : DataLoaderSystem
+    public partial class AlanthorCataphractEntity : DataLoaderSystem
     {
         private EntityArchetype alanthorcataphractArchetype;
 
@@ -110,5 +110,11 @@ namespace TheWaningBorder.Units.AlanthorCataphract
 
             return entity;
         }
+
+        protected override void OnUpdate()
+        {
+            throw new NotImplementedException();
+        }
+
     }
 }

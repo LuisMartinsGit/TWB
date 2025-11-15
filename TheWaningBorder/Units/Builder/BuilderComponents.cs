@@ -1,4 +1,5 @@
 using System;
+using Unity.Collections;
 using Unity.Entities;
 using UnityEngine;
 
@@ -26,10 +27,10 @@ namespace TheWaningBorder.Units.Builder
     /// Builder-specific component for Builder
     /// </summary>
     [Serializable]
-    public struct BuilderBuilderComponent
+    public struct BuilderBuilderComponent : IComponentData
     {
         public float BuildSpeed { get; set; }
-        public string CurrentBuildingId { get; set; }
+        public FixedString64Bytes CurrentBuildingId { get; set; }
         public float BuildProgress { get; set; }
     }
 
@@ -41,6 +42,6 @@ namespace TheWaningBorder.Units.Builder
     {
         public float AbilityCooldown { get; set; }
         public float LastAbilityUseTime { get; set; }
-        public string ActiveAbility { get; set; }
+        public FixedString64Bytes  ActiveAbility { get; set; }
     }
 }

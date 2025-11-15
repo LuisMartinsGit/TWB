@@ -11,7 +11,7 @@ namespace TheWaningBorder.Units.AlanthorSentinel
     /// Entity definition for Alanthor_Sentinel unit
     /// All values MUST be loaded from TechTree.json - NO HARDCODED VALUES!
     /// </summary>
-    public class AlanthorSentinelEntity : DataLoaderSystem
+    public partial class AlanthorSentinelEntity : DataLoaderSystem
     {
         private EntityArchetype alanthorsentinelArchetype;
 
@@ -110,5 +110,11 @@ namespace TheWaningBorder.Units.AlanthorSentinel
 
             return entity;
         }
+
+        protected override void OnUpdate()
+        {
+            throw new NotImplementedException();
+        }
+
     }
 }

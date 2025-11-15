@@ -2,6 +2,7 @@ using System;
 using Unity.Entities;
 using Unity.Mathematics;
 using UnityEngine;
+using Unity.Collections;
 using TheWaningBorder.Core.Components;
 using TheWaningBorder.Core.Systems;
 
@@ -11,42 +12,57 @@ namespace TheWaningBorder.Units.AlanthorCrossbowman
     /// System for handling Alanthor_Crossbowman projectile attacks
     /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
-    public class AlanthorCrossbowmanProjectileSystem : DataLoaderSystem
+    public partial class AlanthorCrossbowmanProjectileSystem : DataLoaderSystem
     {
-        protected override void OnUpdate()
+        private EndSimulationEntityCommandBufferSystem _endSimEcbSystem;
+
+        protected override void OnCreate()
         {
-            Entities
-                .WithAll<AlanthorCrossbowmanTag>()
-                .ForEach((Entity entity, ref AttackComponent attack, in PositionComponent position) =>
-                {
-                    // Create projectile when attacking
-                    // All projectile parameters from TechTree.json
-                    if (attack.DamageType == "ranged")
-                    {
-                        CreateProjectile(entity, attack, position);
-                    }
-                }).Schedule();
+            base.OnCreate();
+            _endSimEcbSystem = World.GetOrCreateSystemManaged<EndSimulationEntityCommandBufferSystem>();
         }
 
-        private void CreateProjectile(Entity attacker, AttackComponent attack, PositionComponent position)
+        protected override void OnUpdate()
         {
+            // Get data ONCE on main thread (this can freely use 'this')
             var unitData = GetUnitData("Alanthor_Crossbowman");
-            
-            // Create projectile entity with data from JSON
-            var projectile = EntityManager.CreateEntity(
-                typeof(ProjectileComponent),
-                typeof(PositionComponent)
-            );
-            
-            // Set projectile data from JSON - no hardcoded values!
-            EntityManager.SetComponentData(projectile, new ProjectileComponent
-            {
-                StartPosition = position.Position,
-                TargetPosition = position.Position, // Would be set to actual target
-                Speed = unitData.projectileSpeed > 0 ? unitData.projectileSpeed : 20f,
-                Damage = attack.Damage,
-                DamageType = attack.DamageType
-            });
+            float projectileSpeed = unitData.projectileSpeed > 0 ? unitData.projectileSpeed : 20f;
+
+            // Create ECB writer (struct) – safe to capture in Burst job
+            var ecb = _endSimEcbSystem.CreateCommandBuffer().AsParallelWriter();
+
+            Entities
+                .WithAll<AlanthorCrossbowmanTag>()
+                .ForEach((Entity entity,
+                          int entityInQueryIndex,
+                          in AttackComponent attack,
+                          in PositionComponent position) =>
+                {
+                    // NOTE: DamageType should be a FixedString, not a C# string, in AttackComponent
+                    if (attack.DamageType == "ranged")
+                    {
+                        // Create projectile via ECB – no EntityManager, no 'this'
+                        var projectile = ecb.CreateEntity(entityInQueryIndex);
+
+                        ecb.AddComponent(entityInQueryIndex, projectile, new ProjectileComponent
+                        {
+                            StartPosition  = position.Position,
+                            TargetPosition = position.Position,   // TODO: set actual target when you have it
+                            Speed          = projectileSpeed,
+                            Damage         = attack.Damage,
+                            DamageType     = attack.DamageType
+                        });
+
+                        ecb.AddComponent(entityInQueryIndex, projectile, new PositionComponent
+                        {
+                            Position = position.Position
+                        });
+                    }
+                })
+                .ScheduleParallel();
+
+            // Make sure ECB system knows about this job
+            _endSimEcbSystem.AddJobHandleForProducer(Dependency);
         }
     }
 }

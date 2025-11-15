@@ -1,7 +1,7 @@
-using System;
 using Unity.Entities;
 using Unity.Mathematics;
 using UnityEngine;
+using Unity.Collections;
 using TheWaningBorder.Core.Components;
 using TheWaningBorder.Core.Systems;
 
@@ -11,32 +11,38 @@ namespace TheWaningBorder.Units.Builder
     /// System for handling Builder building abilities
     /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
-    public class BuilderBuildingSystem : DataLoaderSystem
+    public partial class BuilderBuildingSystem : DataLoaderSystem
     {
         protected override void OnUpdate()
         {
-            float deltaTime = Time.DeltaTime;
-            
+            float deltaTime = World.Time.DeltaTime;
+
             Entities
                 .WithAll<BuilderTag, BuilderBuilderComponent>()
-                .ForEach((Entity entity, ref BuilderBuilderComponent builder) =>
+                .ForEach((ref BuilderBuilderComponent builder) =>
                 {
-                    if (!string.IsNullOrEmpty(builder.CurrentBuildingId))
+                    // CurrentBuildingId is a FixedString64Bytes now
+                    // Check if it's empty by using Length
+                    if (builder.CurrentBuildingId.Length == 0)
+                        return;
+
+                    // Progress building construction using build speed from JSON
+                    builder.BuildProgress += builder.BuildSpeed * deltaTime;
+
+                    if (builder.BuildProgress >= 100f)
                     {
-                        // Progress building construction using build speed from JSON
-                        builder.BuildProgress += builder.BuildSpeed * deltaTime;
-                        
-                        if (builder.BuildProgress >= 100f)
-                        {
-                            CompleteBuildingConstruction(builder.CurrentBuildingId);
-                            builder.CurrentBuildingId = "";
-                            builder.BuildProgress = 0f;
-                        }
+                        CompleteBuildingConstruction(builder.CurrentBuildingId);
+
+                        // Clear the building id and reset progress
+                        builder.CurrentBuildingId = default; // clears FixedString64Bytes
+                        builder.BuildProgress = 0f;
                     }
-                }).Schedule();
+                })
+                .Schedule();
         }
 
-        private void CompleteBuildingConstruction(string buildingId)
+        // static so the job does NOT capture 'this'
+        private static void CompleteBuildingConstruction(FixedString64Bytes buildingId)
         {
             // Complete building construction based on TechTree.json data
             Debug.Log($"Building {buildingId} construction completed");

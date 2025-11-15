@@ -11,7 +11,7 @@ namespace TheWaningBorder.Units.Builder
     /// Entity definition for Builder unit
     /// All values MUST be loaded from TechTree.json - NO HARDCODED VALUES!
     /// </summary>
-    public class BuilderEntity : DataLoaderSystem
+    public partial class BuilderEntity : DataLoaderSystem
     {
         private EntityArchetype builderArchetype;
 
@@ -110,5 +110,11 @@ namespace TheWaningBorder.Units.Builder
 
             return entity;
         }
+
+        protected override void OnUpdate()
+        {
+            throw new NotImplementedException();
+        }
+
     }
 }

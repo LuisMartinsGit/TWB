@@ -11,7 +11,7 @@ namespace TheWaningBorder.Units.RunaiCaravan
     /// Entity definition for Runai_Caravan unit
     /// All values MUST be loaded from TechTree.json - NO HARDCODED VALUES!
     /// </summary>
-    public class RunaiCaravanEntity : DataLoaderSystem
+    public partial class RunaiCaravanEntity : DataLoaderSystem
     {
         private EntityArchetype runaicaravanArchetype;
 
@@ -110,5 +110,11 @@ namespace TheWaningBorder.Units.RunaiCaravan
 
             return entity;
         }
+
+        protected override void OnUpdate()
+        {
+            throw new NotImplementedException();
+        }
+
     }
 }

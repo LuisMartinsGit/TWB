@@ -11,7 +11,7 @@ namespace TheWaningBorder.Units.Archer
     /// Entity definition for Archer unit
     /// All values MUST be loaded from TechTree.json - NO HARDCODED VALUES!
     /// </summary>
-    public class ArcherEntity : DataLoaderSystem
+    public partial class ArcherEntity : DataLoaderSystem
     {
         private EntityArchetype archerArchetype;
 
@@ -110,5 +110,11 @@ namespace TheWaningBorder.Units.Archer
 
             return entity;
         }
+
+        protected override void OnUpdate()
+        {
+            throw new NotImplementedException();
+        }
+
     }
 }

@@ -19,7 +19,7 @@ namespace TheWaningBorder.Core.Systems
     {
         protected TechTreeData TechTreeData { get; private set; }
 
-        protected void LoadTechTreeData()
+        public void LoadTechTreeData()
         {
             TechTreeData = TechTreeLoader.Data;
             

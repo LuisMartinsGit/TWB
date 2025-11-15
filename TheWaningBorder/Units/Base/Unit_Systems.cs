@@ -1,70 +1,69 @@
+using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
-using Unity.Burst;
-using UnityEngine;
 using TheWaningBorder.Core.GameManager;
 
 namespace TheWaningBorder.Units.Base
 {
     [UpdateInGroup(typeof(SimulationSystemGroup))]
-    public partial class UnitMovementSystem : SystemBase
+    //[UpdateAfter(typeof(UnitMovementSystem))]
+    public partial class UnitSeparationSystem : SystemBase
     {
         protected override void OnUpdate()
         {
             float deltaTime = SystemAPI.Time.DeltaTime;
-            
-            Entities.ForEach((ref PositionComponent position, ref MovementComponent movement) =>
-            {
-                if (!movement.IsMoving) return;
-                
-                float3 direction = math.normalize(movement.Destination - position.Position);
-                float moveDistance = movement.Speed * deltaTime;
-                float distanceToTarget = math.distance(position.Position, movement.Destination);
-                
-                if (distanceToTarget <= movement.StoppingDistance)
+            float separationRadius = 1.5f;
+            float separationForce = 5f;
+
+            // Query all units that participate in separation
+            var query = GetEntityQuery(
+                ComponentType.ReadOnly<PositionComponent>(),
+                ComponentType.ReadOnly<MovementComponent>());
+
+            // Take a snapshot of entities & positions
+            var allEntities = query.ToEntityArray(Allocator.TempJob);
+            var allPositions = query.ToComponentDataArray<PositionComponent>(Allocator.TempJob);
+
+            float jobDeltaTime = deltaTime;
+            float jobSeparationRadius = separationRadius;
+            float jobSeparationForce = separationForce;
+
+            Entities
+                .WithReadOnly(allEntities)
+                .WithReadOnly(allPositions)
+                .WithDisposeOnCompletion(allEntities)
+                .WithDisposeOnCompletion(allPositions)
+                .ForEach((Entity entity, ref PositionComponent position, in MovementComponent movement) =>
                 {
-                    movement.IsMoving = false;
-                }
-                else
-                {
-                    position.Position += direction * math.min(moveDistance, distanceToTarget);
-                }
-            }).ScheduleParallel();
-        }
-    }
-    
-    [UpdateInGroup(typeof(SimulationSystemGroup))]
-    public partial class UnitCombatSystem : SystemBase
-    {
-        protected override void OnUpdate()
-        {
-            float currentTime = (float)SystemAPI.Time.ElapsedTime;
-            
-            Entities.ForEach((Entity entity, ref CombatComponent combat, in PositionComponent position) =>
-            {
-                if (combat.Target == Entity.Null) return;
-                
-                if (currentTime - combat.LastAttackTime >= combat.AttackCooldown)
-                {
-                    combat.LastAttackTime = currentTime;
-                    // Apply damage logic here
-                }
-            }).Run();
-        }
-    }
-    
-    [UpdateInGroup(typeof(SimulationSystemGroup))]
-    public partial class UnitHealthSystem : SystemBase
-    {
-        protected override void OnUpdate()
-        {
-            Entities.ForEach((Entity entity, ref HealthComponent health) =>
-            {
-                if (health.CurrentHp <= 0)
-                {
-                    EntityManager.DestroyEntity(entity);
-                }
-            }).Run();
+                    float3 separation = float3.zero;
+                    int neighborCount = 0;
+
+                    float3 pos = position.Position;
+
+                    for (int i = 0; i < allEntities.Length; i++)
+                    {
+                        var otherEntity = allEntities[i];
+                        if (otherEntity == entity)
+                            continue;
+
+                        float3 otherPos = allPositions[i].Position;
+                        float distance = math.distance(pos, otherPos);
+
+                        if (distance < jobSeparationRadius && distance > 0.001f)
+                        {
+                            float3 diff = pos - otherPos;
+                            separation += math.normalize(diff) * (1f - distance / jobSeparationRadius);
+                            neighborCount++;
+                        }
+                    }
+
+                    if (neighborCount > 0)
+                    {
+                        separation = math.normalize(separation) * jobSeparationForce * jobDeltaTime;
+                        position.Position += separation;
+                    }
+                })
+                .Schedule();
         }
     }
 }

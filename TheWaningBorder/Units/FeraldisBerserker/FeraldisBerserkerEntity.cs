@@ -11,7 +11,7 @@ namespace TheWaningBorder.Units.FeraldisBerserker
     /// Entity definition for Feraldis_Berserker unit
     /// All values MUST be loaded from TechTree.json - NO HARDCODED VALUES!
     /// </summary>
-    public class FeraldisBerserkerEntity : DataLoaderSystem
+    public partial class FeraldisBerserkerEntity : DataLoaderSystem
     {
         private EntityArchetype feraldisberserkerArchetype;
 
@@ -110,5 +110,11 @@ namespace TheWaningBorder.Units.FeraldisBerserker
 
             return entity;
         }
+
+        protected override void OnUpdate()
+        {
+            throw new NotImplementedException();
+        }
+
     }
 }

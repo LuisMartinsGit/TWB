@@ -50,14 +50,13 @@ namespace TheWaningBorder.Core.Systems
 
         private void LoadArrowPrefab()
         {
-            // Load arrow prefab from resources
             var prefabPath = "Prefabs/Projectiles/Arrow";
-            arrowPrefab = Resources.Load<GameObject>(prefabPath);
-            
+
+            arrowPrefab = UnityEngine.Resources.Load<GameObject>(prefabPath);
+
             if (arrowPrefab == null)
             {
                 Debug.LogWarning($"Arrow prefab not found at path: {prefabPath}. Using default.");
-                // Create a simple default arrow if prefab not found
                 arrowPrefab = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
                 arrowPrefab.transform.localScale = new Vector3(0.1f, 0.5f, 0.1f);
                 arrowPrefab.SetActive(false);

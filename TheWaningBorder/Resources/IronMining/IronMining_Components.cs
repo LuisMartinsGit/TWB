@@ -12,6 +12,9 @@ namespace TheWaningBorder.Resources.IronMining
         public Entity ClaimedByMiner;
         public int PatchId;
         public bool IsExhausted;
+
+        public float MiningRadius { get; internal set; }
+
     }
     
     public struct IronPatchComponent : IComponentData
@@ -42,6 +45,9 @@ namespace TheWaningBorder.Resources.IronMining
         public float MiningSpeed;
         public int MaxCarryCapacity;
         public float TimeAtDeposit;
+
+        public Entity TargetDropoff { get; internal set; }
+
     }
     
     public struct MinerTag : IComponentData

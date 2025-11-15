@@ -28,8 +28,8 @@ namespace TheWaningBorder.Buildings.Production
             var ecb = _ecbSystem.CreateCommandBuffer();
 
             // Lookups instead of lambda params or WithAll<> (avoids DC0005 / SGQC001)
-            var ownerLookup    = GetComponentLookup<Core.GameManager.OwnerComponent>(isReadOnly: true);
-            var positionLookup = GetComponentLookup<PositionComponent>(isReadOnly: true);
+            var ownerLookup    = GetComponentLookup<OwnerComponent>(isReadOnly: true);
+            var positionLookup = GetComponentLookup<Core.GameManager.PositionComponent>(isReadOnly: true);
             var buildingLookup = GetComponentLookup<BuildingComponent>(isReadOnly: true);
 
             Entities
@@ -99,12 +99,12 @@ namespace TheWaningBorder.Buildings.Production
                         PopCost        = unitDef.popCost
                     });
 
-                    ecb.AddComponent(unitEntity, new PositionComponent
+                    ecb.AddComponent(unitEntity, new Core.Components.PositionComponent
                     {
                         Position = spawnPosition
                     });
 
-                    ecb.AddComponent(unitEntity, new HealthComponent
+                    ecb.AddComponent(unitEntity, new Core.Components.HealthComponent
                     {
                         CurrentHp = unitDef.hp,
                         MaxHp     = unitDef.hp,
@@ -119,19 +119,18 @@ namespace TheWaningBorder.Buildings.Production
                         StoppingDistance = 1f
                     });
 
-                    ecb.AddComponent(unitEntity, new Core.GameManager.OwnerComponent
+                    ecb.AddComponent(unitEntity, new OwnerComponent
                     {
-                        PlayerId = owner.PlayerId,
-                        TeamId   = owner.TeamId
+                        PlayerId = owner.PlayerId
                     });
 
-                    ecb.AddComponent(unitEntity, new Core.GameManager.SelectableComponent
+                    ecb.AddComponent(unitEntity, new SelectableComponent
                     {
                         IsSelected      = false,
                         SelectionRadius = 1f
                     });
 
-                    ecb.AddComponent(unitEntity, new Core.GameManager.CommandableComponent
+                    ecb.AddComponent(unitEntity, new CommandableComponent
                     {
                         CanMove   = true,
                         CanAttack = unitDef.damage > 0,

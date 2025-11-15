@@ -11,7 +11,7 @@ namespace TheWaningBorder.Units.Swordsman
     /// Entity definition for Swordsman unit
     /// All values MUST be loaded from TechTree.json - NO HARDCODED VALUES!
     /// </summary>
-    public class SwordsmanEntity : DataLoaderSystem
+    public partial class SwordsmanEntity : DataLoaderSystem
     {
         private EntityArchetype swordsmanArchetype;
 
@@ -110,5 +110,11 @@ namespace TheWaningBorder.Units.Swordsman
 
             return entity;
         }
+
+        protected override void OnUpdate()
+        {
+            throw new NotImplementedException();
+        }
+
     }
 }

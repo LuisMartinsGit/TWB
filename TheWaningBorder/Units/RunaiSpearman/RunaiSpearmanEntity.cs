@@ -11,7 +11,7 @@ namespace TheWaningBorder.Units.RunaiSpearman
     /// Entity definition for Runai_Spearman unit
     /// All values MUST be loaded from TechTree.json - NO HARDCODED VALUES!
     /// </summary>
-    public class RunaiSpearmanEntity : DataLoaderSystem
+    public partial class RunaiSpearmanEntity : DataLoaderSystem
     {
         private EntityArchetype runaispearmanArchetype;
 
@@ -110,5 +110,11 @@ namespace TheWaningBorder.Units.RunaiSpearman
 
             return entity;
         }
+
+        protected override void OnUpdate()
+        {
+            throw new NotImplementedException();
+        }
+
     }
 }

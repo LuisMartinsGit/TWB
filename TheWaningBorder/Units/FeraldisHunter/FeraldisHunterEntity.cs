@@ -11,7 +11,7 @@ namespace TheWaningBorder.Units.FeraldisHunter
     /// Entity definition for Feraldis_Hunter unit
     /// All values MUST be loaded from TechTree.json - NO HARDCODED VALUES!
     /// </summary>
-    public class FeraldisHunterEntity : DataLoaderSystem
+    public partial class FeraldisHunterEntity : DataLoaderSystem
     {
         private EntityArchetype feraldishunterArchetype;
 
@@ -110,5 +110,11 @@ namespace TheWaningBorder.Units.FeraldisHunter
 
             return entity;
         }
+
+        protected override void OnUpdate()
+        {
+            throw new NotImplementedException();
+        }
+
     }
 }

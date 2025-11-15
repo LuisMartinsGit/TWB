@@ -1,420 +1,313 @@
-using System;
 using Unity.Entities;
 using Unity.Mathematics;
+using UnityEngine;
+using TheWaningBorder.Core.GameManager;
+using TheWaningBorder.Resources.IronMining;
+using TheWaningBorder.Units.Base;
 using Unity.Collections;
 using Unity.Burst;
-using Unity.Jobs;
-using UnityEngine;
-using Random = Unity.Mathematics.Random;
-using TheWaningBorder.Core.GameManager;
-using TheWaningBorder.Core.Settings;
-using TheWaningBorder.Units.Base;
-using TheWaningBorder.Buildings.Base;
-using TheWaningBorder.Map.Spawning;
 
 namespace TheWaningBorder.Resources.IronMining
 {
-    [UpdateInGroup(typeof(InitializationSystemGroup))]
-    public partial class IronDepositGenerationSystem : SystemBase
-    {
-        private EntityQuery _spawnQuery;
-        private Random _random;
-        private int _nextPatchId = 0;
-        
-        protected override void OnCreate()
-        {
-            _random = new Random((uint)GameSettings.SpawnSeed);
-            RequireForUpdate<GameStateComponent>();
-        }
-        
-        public void GenerateInitialDeposits()
-        {
-            Debug.Log("[IronMining] Generating initial iron deposits...");
-            
-            var spawnPositions = GetPlayerSpawnPositions();
-            
-            // Generate guaranteed patches near spawn positions
-            foreach (var spawnPos in spawnPositions)
-            {
-                CreateGuaranteedPatch(spawnPos);
-            }
-            
-            // Generate additional random patches
-            GenerateRandomPatches();
-            
-            Debug.Log($"[IronMining] Generated {_nextPatchId} iron patches");
-        }
-        
-        private NativeArray<float3> GetPlayerSpawnPositions()
-        {
-            var positions = new NativeArray<float3>(GameSettings.TotalPlayers, Allocator.Temp);
-            
-            float mapRadius = GameSettings.MapHalfSize * 0.8f;
-            
-            switch (GameSettings.SpawnLayout)
-            {
-                case SpawnLayout.Circle:
-                    for (int i = 0; i < GameSettings.TotalPlayers; i++)
-                    {
-                        float angle = (i * 2 * math.PI) / GameSettings.TotalPlayers;
-                        positions[i] = new float3(
-                            math.cos(angle) * mapRadius,
-                            0,
-                            math.sin(angle) * mapRadius
-                        );
-                    }
-                    break;
-                    
-                case SpawnLayout.Grid:
-                    int gridSize = (int)math.ceil(math.sqrt(GameSettings.TotalPlayers));
-                    float spacing = (mapRadius * 2) / gridSize;
-                    for (int i = 0; i < GameSettings.TotalPlayers; i++)
-                    {
-                        int x = i % gridSize;
-                        int y = i / gridSize;
-                        positions[i] = new float3(
-                            -mapRadius + x * spacing + spacing/2,
-                            0,
-                            -mapRadius + y * spacing + spacing/2
-                        );
-                    }
-                    break;
-                    
-                case SpawnLayout.TwoSides:
-                    bool northSouth = (GameSettings.TwoSides == TwoSidesPreset.NorthVsSouth);
-                    for (int i = 0; i < GameSettings.TotalPlayers; i++)
-                    {
-                        bool firstTeam = (i < GameSettings.TotalPlayers / 2);
-                        float teamOffset = firstTeam ? -mapRadius * 0.7f : mapRadius * 0.7f;
-                        float spread = ((i % (GameSettings.TotalPlayers/2)) - 1) * 20f;
-                        
-                        if (northSouth)
-                            positions[i] = new float3(spread, 0, teamOffset);
-                        else
-                            positions[i] = new float3(teamOffset, 0, spread);
-                    }
-                    break;
-                    
-                default:
-                    for (int i = 0; i < GameSettings.TotalPlayers; i++)
-                    {
-                        positions[i] = _random.NextFloat3(
-                            new float3(-mapRadius, 0, -mapRadius),
-                            new float3(mapRadius, 0, mapRadius)
-                        );
-                    }
-                    break;
-            }
-            
-            return positions;
-        }
-        
-        private void CreateGuaranteedPatch(float3 spawnPosition)
-        {
-            // Place patch near spawn but not too close
-            float angle = _random.NextFloat(0, 2 * math.PI);
-            float distance = _random.NextFloat(15f, 25f);
-            
-            float3 patchCenter = spawnPosition + new float3(
-                math.cos(angle) * distance,
-                0,
-                math.sin(angle) * distance
-            );
-            
-            CreatePatch(patchCenter, GameSettings.DepositsPerPatch, true);
-        }
-        
-        private void GenerateRandomPatches()
-        {
-            var existingPatches = new NativeList<float3>(Allocator.Temp);
-            
-            Entities.ForEach((in IronPatchComponent patch) =>
-            {
-                existingPatches.Add(patch.CenterPosition);
-            }).Run();
-            
-            int patchesCreated = 0;
-            int maxAttempts = 100;
-            
-            while (patchesCreated < GameSettings.AdditionalRandomPatches && maxAttempts > 0)
-            {
-                maxAttempts--;
-                
-                float3 position = new float3(
-                    _random.NextFloat(-GameSettings.MapHalfSize, GameSettings.MapHalfSize),
-                    0,
-                    _random.NextFloat(-GameSettings.MapHalfSize, GameSettings.MapHalfSize)
-                );
-                
-                // Check minimum distance from other patches
-                bool tooClose = false;
-                foreach (var existing in existingPatches)
-                {
-                    if (math.distance(position, existing) < GameSettings.MinPatchDistance)
-                    {
-                        tooClose = true;
-                        break;
-                    }
-                }
-                
-                if (!tooClose)
-                {
-                    CreatePatch(position, GameSettings.DepositsPerPatch, false);
-                    existingPatches.Add(position);
-                    patchesCreated++;
-                }
-            }
-            
-            existingPatches.Dispose();
-        }
-        
-        private void CreatePatch(float3 center, int depositCount, bool isGuaranteed)
-        {
-            int patchId = _nextPatchId++;
-            
-            // Create patch entity
-            var patchEntity = EntityManager.CreateEntity();
-            EntityManager.AddComponentData(patchEntity, new IronPatchComponent
-            {
-                CenterPosition = center,
-                Radius = GameSettings.PatchRadius,
-                DepositCount = depositCount,
-                PatchId = patchId,
-                IsGuaranteedPatch = isGuaranteed
-            });
-            
-            // Create individual deposits
-            for (int i = 0; i < depositCount; i++)
-            {
-                float angle = (i * 2 * math.PI) / depositCount;
-                float radius = _random.NextFloat(0.5f, GameSettings.PatchRadius);
-                
-                float3 depositPos = center + new float3(
-                    math.cos(angle) * radius,
-                    0,
-                    math.sin(angle) * radius
-                );
-                
-                CreateDeposit(depositPos, GameSettings.OrePerDeposit, patchId);
-            }
-        }
-        
-        private void CreateDeposit(float3 position, int oreAmount, int patchId)
-        {
-            var entity = EntityManager.CreateEntity();
-            
-            EntityManager.AddComponentData(entity, new IronDepositComponent
-            {
-                Position = position,
-                RemainingOre = oreAmount,
-                MaxOre = oreAmount,
-                ClaimedByMiner = Entity.Null,
-                PatchId = patchId,
-                IsExhausted = false
-            });
-            
-            EntityManager.AddComponentData(entity, new PositionComponent
-            {
-                Position = position
-            });
-            
-            EntityManager.AddComponentData(entity, new ResourceDepositTag
-            {
-                Type = ResourceType.Iron
-            });
-        }
-        
-        protected override void OnUpdate() { }
-    }
-    
     [UpdateInGroup(typeof(SimulationSystemGroup))]
-    public partial class MinerTargetingSystem : SystemBase
+    [BurstCompile]
+    public partial class IronMiningSystem : SystemBase
     {
+        private EntityCommandBufferSystem _ecbSystem;
         private EntityQuery _depositQuery;
-        private EntityQuery _dropOffQuery;
+        private EntityQuery _buildingQuery;
+        private EntityQuery _playerQuery;
         
         protected override void OnCreate()
         {
+            _ecbSystem = World.GetOrCreateSystemManaged<EndSimulationEntityCommandBufferSystem>();
+            
+            // Create queries for deposits, buildings, and players
             _depositQuery = GetEntityQuery(
-                ComponentType.ReadOnly<IronDepositComponent>(),
-                ComponentType.Exclude<MinerTag>()
+                ComponentType.ReadWrite<IronDepositComponent>(),
+                ComponentType.ReadOnly<PositionComponent>()
             );
             
-            _dropOffQuery = GetEntityQuery(
-                ComponentType.ReadOnly<ResourceDropOffPointComponent>()
+            _buildingQuery = GetEntityQuery(
+                ComponentType.ReadOnly<BuildingComponent>(),
+                ComponentType.ReadOnly<PositionComponent>(),
+                ComponentType.ReadOnly<OwnerComponent>()
+            );
+            
+            _playerQuery = GetEntityQuery(
+                ComponentType.ReadWrite<ResourcesComponent>(),
+                ComponentType.ReadOnly<PlayerComponent>()
             );
         }
         
-        protected override void OnUpdate()
-        {
-            var deposits = _depositQuery.ToEntityArray(Allocator.TempJob);
-            var depositData = _depositQuery.ToComponentDataArray<IronDepositComponent>(Allocator.TempJob);
-            
-            var dropOffs = _dropOffQuery.ToEntityArray(Allocator.TempJob);
-            var dropOffData = _dropOffQuery.ToComponentDataArray<ResourceDropOffPointComponent>(Allocator.TempJob);
-            
-            Entities
-                .WithAll<MinerTag>()
-                .ForEach((Entity entity, ref MiningStateComponent miningState, 
-                         in PositionComponent position, in OwnerComponent owner) =>
-                {
-                    // Only retarget if idle
-                    if (miningState.State != MiningState.Idle) return;
-                    
-                    // Find nearest unclaimed deposit
-                    Entity nearestDeposit = Entity.Null;
-                    float nearestDistance = float.MaxValue;
-                    
-                    for (int i = 0; i < deposits.Length; i++)
-                    {
-                        if (depositData[i].IsExhausted) continue;
-                        if (depositData[i].ClaimedByMiner != Entity.Null) continue;
-                        
-                        float distance = math.distance(position.Position, depositData[i].Position);
-                        if (distance < nearestDistance)
-                        {
-                            nearestDistance = distance;
-                            nearestDeposit = deposits[i];
-                        }
-                    }
-                    
-                    if (nearestDeposit != Entity.Null)
-                    {
-                        // Find nearest drop-off point for return trip
-                        Entity nearestDropOff = Entity.Null;
-                        float nearestDropOffDistance = float.MaxValue;
-                        
-                        for (int i = 0; i < dropOffs.Length; i++)
-                        {
-                            if (dropOffData[i].OwnerId != owner.PlayerId) continue;
-                            if (!dropOffData[i].CanReceiveIron) continue;
-                            
-                            float distance = math.distance(position.Position, dropOffData[i].DropOffPosition);
-                            if (distance < nearestDropOffDistance)
-                            {
-                                nearestDropOffDistance = distance;
-                                nearestDropOff = dropOffs[i];
-                            }
-                        }
-                        
-                        if (nearestDropOff != Entity.Null)
-                        {
-                            miningState.TargetDeposit = nearestDeposit;
-                            miningState.ReturnBuilding = nearestDropOff;
-                            miningState.State = MiningState.MovingToDeposit;
-                        }
-                    }
-                }).Schedule();
-            
-            Dependency.Complete();
-            deposits.Dispose();
-            depositData.Dispose();
-            dropOffs.Dispose();
-            dropOffData.Dispose();
-        }
-    }
-    
-    [UpdateInGroup(typeof(SimulationSystemGroup))]
-    [UpdateAfter(typeof(MinerTargetingSystem))]
-    public partial class MiningSystem : SystemBase
-    {
         protected override void OnUpdate()
         {
             float deltaTime = SystemAPI.Time.DeltaTime;
+            var ecb = _ecbSystem.CreateCommandBuffer().AsParallelWriter();
             
-            // Handle mining state
+            // Get component lookups for efficient access
+            var depositLookup = GetComponentLookup<IronDepositComponent>(false);
+            var positionLookup = GetComponentLookup<PositionComponent>(true);
+            var ownerLookup = GetComponentLookup<OwnerComponent>(true);
+            var buildingLookup = GetComponentLookup<BuildingComponent>(true);
+            
+            // Get arrays of deposits and buildings for searching
+            var deposits = _depositQuery.ToEntityArray(Allocator.TempJob);
+            var buildings = _buildingQuery.ToEntityArray(Allocator.TempJob);
+            
+            // Find idle miners and assign them to deposits
             Entities
                 .WithAll<MinerTag>()
-                .ForEach((Entity minerEntity, ref MiningStateComponent miningState, in PositionComponent position) =>
+                .WithReadOnly(positionLookup)
+                //.WithReadOnly(ownerLookup)
+                .WithDisposeOnCompletion(deposits)
+                .ForEach((Entity entity, int entityInQueryIndex, 
+                         ref MiningStateComponent miningState, 
+                         ref MovementComponent movement,
+                         in PositionComponent position, 
+                         in OwnerComponent owner) =>
                 {
-                    if (miningState.State != MiningState.Mining) return;
-                    if (miningState.TargetDeposit == Entity.Null) return;
-                    
-                    // Progress mining
-                    miningState.MiningProgress += miningState.MiningSpeed * deltaTime;
-                    
-                    if (miningState.MiningProgress >= 1f)
+                    if (miningState.State == MiningState.Idle)
                     {
-                        // Mining complete
-                        miningState.MiningProgress = 0f;
+                        // Find nearest unclaimed deposit
+                        Entity nearestDeposit = Entity.Null;
+                        float nearestDistance = float.MaxValue;
                         
-                        // Check if deposit still has ore (access in main thread)
-                        if (SystemAPI.HasComponent<IronDepositComponent>(miningState.TargetDeposit))
+                        for (int i = 0; i < deposits.Length; i++)
                         {
-                            var deposit = SystemAPI.GetComponent<IronDepositComponent>(miningState.TargetDeposit);
+                            var depositEntity = deposits[i];
+                            if (!depositLookup.HasComponent(depositEntity)) continue;
                             
-                            int oreToTake = math.min(deposit.RemainingOre, 
-                                                     miningState.MaxCarryCapacity - miningState.CarriedOre);
+                            var deposit = depositLookup[depositEntity];
+                            if (deposit.RemainingOre <= 0 || deposit.ClaimedByMiner != Entity.Null) continue;
                             
-                            if (oreToTake > 0)
+                            if (!positionLookup.HasComponent(depositEntity)) continue;
+                            var depositPos = positionLookup[depositEntity];
+                            
+                            float distance = math.distance(position.Position, depositPos.Position);
+                            if (distance < nearestDistance)
                             {
-                                miningState.CarriedOre += oreToTake;
-                                deposit.RemainingOre -= oreToTake;
-                                
-                                if (deposit.RemainingOre <= 0)
-                                {
-                                    deposit.IsExhausted = true;
-                                    deposit.ClaimedByMiner = Entity.Null;
-                                }
-                                
-                                SystemAPI.SetComponent(miningState.TargetDeposit, deposit);
+                                nearestDistance = distance;
+                                nearestDeposit = depositEntity;
                             }
                         }
                         
-                        // Check if should return or continue mining
-                        if (miningState.CarriedOre >= miningState.MaxCarryCapacity)
+                        if (nearestDeposit != Entity.Null)
                         {
-                            miningState.State = MiningState.Returning;
+                            miningState.State = MiningState.MovingToDeposit;
+                            miningState.TargetDeposit = nearestDeposit;
                             
-                            // Release claim on deposit
-                            if (SystemAPI.HasComponent<IronDepositComponent>(miningState.TargetDeposit))
+                            // Claim the deposit - need to use ECB since we're in a job
+                            var depositPos = positionLookup[nearestDeposit];
+                            movement.Destination = depositPos.Position;
+                            movement.IsMoving = true;
+                            
+                            // Mark deposit as claimed (will be applied via ECB after job completes)
+                            var deposit = depositLookup[nearestDeposit];
+                            deposit.ClaimedByMiner = entity;
+                            depositLookup[nearestDeposit] = deposit;
+                        }
+                    }
+                })
+                .ScheduleParallel();
+            
+            // Handle mining when miners reach deposits
+            Entities
+                .WithAll<MinerTag>()
+                .WithReadOnly(positionLookup)
+                .ForEach((Entity entity, ref MiningStateComponent miningState, in PositionComponent position) =>
+                {
+                    if (miningState.State == MiningState.MovingToDeposit && miningState.TargetDeposit != Entity.Null)
+                    {
+                        if (depositLookup.HasComponent(miningState.TargetDeposit) && 
+                            positionLookup.HasComponent(miningState.TargetDeposit))
+                        {
+                            var deposit = depositLookup[miningState.TargetDeposit];
+                            var depositPos = positionLookup[miningState.TargetDeposit];
+                            
+                            float distance = math.distance(position.Position, depositPos.Position);
+                            if (distance <= 2f) // Mining range
                             {
-                                var deposit = SystemAPI.GetComponent<IronDepositComponent>(miningState.TargetDeposit);
-                                deposit.ClaimedByMiner = Entity.Null;
-                                SystemAPI.SetComponent(miningState.TargetDeposit, deposit);
+                                miningState.State = MiningState.Mining;
+                                miningState.MiningProgress = 0f;
                             }
                         }
                     }
-                }).Run();
+                })
+                .ScheduleParallel();
+            
+            // Mine ore
+            Entities
+                .WithAll<MinerTag>()
+                .ForEach((Entity entity, ref MiningStateComponent miningState) =>
+                {
+                    if (miningState.State == MiningState.Mining)
+                    {
+                        miningState.MiningProgress += deltaTime * 20f; // Mining speed
+                        
+                        if (miningState.MiningProgress >= 100f)
+                        {
+                            if (depositLookup.HasComponent(miningState.TargetDeposit))
+                            {
+                                var deposit = depositLookup[miningState.TargetDeposit];
+                                
+                                int oreToMine = math.min(5, deposit.RemainingOre); // Mine 5 ore at a time
+                                deposit.RemainingOre -= oreToMine;
+                                miningState.CarriedOre = oreToMine;
+                                
+                                depositLookup[miningState.TargetDeposit] = deposit;
+                                
+                                miningState.State = MiningState.Returning;
+                                miningState.MiningProgress = 0f;
+                                
+                                // Release claim on deposit
+                                deposit.ClaimedByMiner = Entity.Null;
+                                depositLookup[miningState.TargetDeposit] = deposit;
+                            }
+                        }
+                    }
+                })
+                .ScheduleParallel();
+            
+            // Return to base - find dropoff points
+            var buildingsArray = _buildingQuery.ToEntityArray(Allocator.TempJob);
+            
+            Entities
+                .WithAll<MinerTag>()
+                .WithReadOnly(positionLookup)
+                .WithReadOnly(ownerLookup)
+                //.WithReadOnly(buildingLookup)
+                .WithDisposeOnCompletion(buildingsArray)
+                .ForEach((Entity entity, ref MiningStateComponent miningState, ref MovementComponent movement,
+                         in OwnerComponent owner) =>
+                {
+                    if (miningState.State == MiningState.Returning)
+                    {
+                        // Find nearest dropoff point (Town Center, etc.)
+                        Entity nearestDropoff = Entity.Null;
+                        float3 dropoffPos = float3.zero;
+                        float nearestDistance = float.MaxValue;
+                        
+                        for (int i = 0; i < buildingsArray.Length; i++)
+                        {
+                            var buildingEntity = buildingsArray[i];
+                            if (!ownerLookup.HasComponent(buildingEntity)) continue;
+                            
+                            var buildingOwner = ownerLookup[buildingEntity];
+                            if (buildingOwner.PlayerId != owner.PlayerId) continue;
+                            
+                            if (!positionLookup.HasComponent(buildingEntity)) continue;
+                            var buildingPos = positionLookup[buildingEntity];
+                            
+                            float distance = math.distance(movement.Destination, buildingPos.Position);
+                            if (distance < nearestDistance)
+                            {
+                                nearestDistance = distance;
+                                nearestDropoff = buildingEntity;
+                                dropoffPos = buildingPos.Position;
+                            }
+                        }
+                        
+                        if (nearestDropoff != Entity.Null)
+                        {
+                            miningState.TargetDropoff = nearestDropoff;
+                            movement.Destination = dropoffPos;
+                            movement.IsMoving = true;
+                            miningState.State = MiningState.Depositing;
+                        }
+                    }
+                })
+                .ScheduleParallel();
         }
     }
     
     [UpdateInGroup(typeof(SimulationSystemGroup))]
-    [UpdateAfter(typeof(MiningSystem))]
+    [UpdateAfter(typeof(IronMiningSystem))]
+    [BurstCompile]
     public partial class OreDeliverySystem : SystemBase
     {
+        private EntityQuery _playerQuery;
+        
+        protected override void OnCreate()
+        {
+            _playerQuery = GetEntityQuery(
+                ComponentType.ReadWrite<ResourcesComponent>(),
+                ComponentType.ReadOnly<PlayerComponent>()
+            );
+        }
+        
         protected override void OnUpdate()
         {
             float deltaTime = SystemAPI.Time.DeltaTime;
             
+            // Get component lookups
+            var positionLookup = GetComponentLookup<PositionComponent>(true);
+            var resourcesLookup = GetComponentLookup<ResourcesComponent>(false);
+            var playerLookup = GetComponentLookup<PlayerComponent>(true);
+            
+            // Get player entities
+            var playerEntities = _playerQuery.ToEntityArray(Allocator.TempJob);
+            
             Entities
                 .WithAll<MinerTag>()
-                .ForEach((Entity entity, ref MiningStateComponent miningState, in OwnerComponent owner) =>
+                .WithReadOnly(positionLookup)
+                .WithReadOnly(playerLookup)
+                .WithDisposeOnCompletion(playerEntities)
+                .ForEach((Entity entity, ref MiningStateComponent miningState, 
+                         in OwnerComponent owner, in PositionComponent position) =>
                 {
                     if (miningState.State != MiningState.Depositing) return;
                     if (miningState.CarriedOre <= 0) return;
                     
-                    // Find player resources
-                    bool delivered = false;
-                    Entities
-                        .WithAll<PlayerComponent>()
-                        .ForEach((Entity playerEntity, ref ResourcesComponent resources, in PlayerComponent player) =>
-                        {
-                            if (player.PlayerId == owner.PlayerId)
-                            {
-                                resources.Iron += miningState.CarriedOre;
-                                delivered = true;
-                            }
-                        }).Run();
-                    
-                    if (delivered)
+                    // Check if near dropoff
+                    if (miningState.TargetDropoff != Entity.Null && 
+                        positionLookup.HasComponent(miningState.TargetDropoff))
                     {
-                        Debug.Log($"[Mining] Player {owner.PlayerId} received {miningState.CarriedOre} iron");
-                        miningState.CarriedOre = 0;
-                        miningState.State = MiningState.Idle;
-                        miningState.TargetDeposit = Entity.Null;
+                        var dropoffPos = positionLookup[miningState.TargetDropoff];
+                        float distance = math.distance(position.Position, dropoffPos.Position);
+                        
+                        if (distance <= 3f) // Dropoff range
+                        {
+                            // Find player resources and deliver ore
+                            bool delivered = false;
+                            
+                            for (int i = 0; i < playerEntities.Length; i++)
+                            {
+                                var playerEntity = playerEntities[i];
+                                if (!playerLookup.HasComponent(playerEntity)) continue;
+                                
+                                var player = playerLookup[playerEntity];
+                                if (player.PlayerId == owner.PlayerId)
+                                {
+                                    if (resourcesLookup.HasComponent(playerEntity))
+                                    {
+                                        var resources = resourcesLookup[playerEntity];
+                                        resources.Iron += miningState.CarriedOre;
+                                        resourcesLookup[playerEntity] = resources;
+                                        delivered = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            
+                            if (delivered)
+                            {
+                                miningState.CarriedOre = 0;
+                                miningState.State = MiningState.Idle;
+                                miningState.TargetDeposit = Entity.Null;
+                                miningState.TargetDropoff = Entity.Null;
+                            }
+                        }
                     }
-                }).Run();
+                })
+                .ScheduleParallel();
         }
+    }
+    
+    // BuildingComponent definition (should be in Buildings namespace but included here for compilation)
+    public struct BuildingComponent : IComponentData
+    {
+        public FixedString64Bytes BuildingId;
+        public bool IsConstructed;
     }
 }

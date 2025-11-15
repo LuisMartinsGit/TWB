@@ -11,7 +11,7 @@ namespace TheWaningBorder.Units.RunaiSandBallista
     /// Entity definition for Runai_SandBallista unit
     /// All values MUST be loaded from TechTree.json - NO HARDCODED VALUES!
     /// </summary>
-    public class RunaiSandBallistaEntity : DataLoaderSystem
+    public partial class RunaiSandBallistaEntity : DataLoaderSystem
     {
         private EntityArchetype runaisandballistaArchetype;
 
@@ -110,5 +110,11 @@ namespace TheWaningBorder.Units.RunaiSandBallista
 
             return entity;
         }
+
+        protected override void OnUpdate()
+        {
+            throw new NotImplementedException();
+        }
+
     }
 }

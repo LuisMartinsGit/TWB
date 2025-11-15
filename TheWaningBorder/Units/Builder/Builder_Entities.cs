@@ -62,8 +62,7 @@ namespace TheWaningBorder.Units.Builder
             // Owner
             entityManager.AddComponentData(entity, new OwnerComponent
             {
-                PlayerId = playerId,
-                TeamId = playerId
+                PlayerId = playerId
             });
             
             // Builder capability
