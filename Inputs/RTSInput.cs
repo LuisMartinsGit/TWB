@@ -1,13 +1,11 @@
-// RTSInput.cs - FIXED VERSION
-// Now checks for both BuilderCommandPanel and BarracksPanel to prevent deselection
-
+// RTSInput.cs - Refactored to use CommandGateway
 using System.Collections.Generic;
 using UnityEngine;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
 using Unity.Collections;
-
+using TheWaningBorder.Core;
 
 public class RTSInput : MonoBehaviour
 {
@@ -147,7 +145,7 @@ public class RTSInput : MonoBehaviour
         ents.Dispose();
     }
 
-    // ---------------- Right-click commands ----------------
+    // ---------------- Right-click commands (REFACTORED FOR COMMANDGATEWAY) ----------------
     void HandleRightClick()
     {
         if (!Input.GetMouseButtonDown(1)) return;
@@ -156,118 +154,261 @@ public class RTSInput : MonoBehaviour
 
         if (!TryGetClickPoint(out float3 clickWorld)) return;
 
-        if (_rallyMode)
-        {
-            _rallyMode = false;
-            var bases = _em.CreateEntityQuery(typeof(BuildingTag), typeof(FactionTag))
-                           .ToEntityArray(Allocator.Temp);
-            foreach (var b in bases)
-            {
-                if (!_em.Exists(b)) continue;
-                if (_em.GetComponentData<FactionTag>(b).Value != Faction.Blue) continue;
-
-                var rp = _em.GetComponentData<RallyPoint>(b);
-                rp.Has = 1; rp.Position = clickWorld;
-                _em.SetComponentData(b, rp);
-            }
-            bases.Dispose();
-            return;
-        }
-
-        var target = RaycastPickEntity();
-        bool validEnemy = target != Entity.Null && _em.Exists(target) &&
-                          _em.HasComponent<FactionTag>(target) &&
-                          _em.GetComponentData<FactionTag>(target).Value != Faction.Blue;
-
-        if (validEnemy)
+        // Special mode: setting rally point for selected buildings
+        if (IsSetRallyPointMode())
         {
             for (int i = 0; i < _selection.Count; i++)
             {
                 var e = _selection[i];
                 if (!_em.Exists(e)) continue;
+                if (!_em.HasComponent<BuildingTag>(e)) continue;
 
-                // Only units can attack on right-click; skip buildings
-                if (_em.HasComponent<BuildingTag>(e)) continue;
-
-                if (!_em.HasComponent<AttackCommand>(e)) _em.AddComponent<AttackCommand>(e);
-                _em.SetComponentData(e, new AttackCommand { Target = target });
-                if (_em.HasComponent<MoveCommand>(e)) _em.RemoveComponent<MoveCommand>(e);
-
-                if (_em.HasComponent<UserMoveOrder>(e)) _em.RemoveComponent<UserMoveOrder>(e);
+                if (!_em.HasComponent<RallyPoint>(e)) _em.AddComponent<RallyPoint>(e);
+                _em.SetComponentData(e, new RallyPoint { Position = clickWorld, Has = 1 });
             }
             return;
         }
 
-        // Formation move to clickWorld (ONLY units)
-        int count = _selection.Count;
-        float3 center = clickWorld;
+        // Check what the user clicked on
+        var target = RaycastPickEntity();
+        
+        // Determine target type
+        TargetType targetType = DetermineTargetType(target);
+        
+        // Determine selected unit capabilities
+        UnitCapabilities capabilities = DetermineCapabilities();
 
-        float3 selCenter = float3.zero; int alive = 0;
-        for (int i = 0; i < count; i++)
+        // Route to appropriate command based on target and capabilities
+        switch (targetType)
+        {
+            case TargetType.Enemy:
+                // Attack command (if units can attack)
+                if (capabilities.CanAttack)
+                {
+                    for (int i = 0; i < _selection.Count; i++)
+                    {
+                        var e = _selection[i];
+                        if (!_em.Exists(e)) continue;
+                        if (_em.HasComponent<BuildingTag>(e)) continue;
+
+                        CommandGateway.IssueAttack(_em, e, target);
+                    }
+                }
+                break;
+
+            case TargetType.FriendlyUnit:
+                // Heal command (if healers are selected)
+                if (capabilities.CanHeal)
+                {
+                    for (int i = 0; i < _selection.Count; i++)
+                    {
+                        var e = _selection[i];
+                        if (!_em.Exists(e)) continue;
+                        if (!CanHeal(e)) continue;
+
+                        CommandGateway.IssueHeal(_em, e, target);
+                    }
+                }
+                else
+                {
+                    // Default: move to friendly unit position
+                    IssueFormationMove(clickWorld);
+                }
+                break;
+
+            case TargetType.Resource:
+                // Gather command (if miners are selected)
+                if (capabilities.CanGather)
+                {
+                    Entity depositLocation = FindNearestGatherersHut();
+                    for (int i = 0; i < _selection.Count; i++)
+                    {
+                        var e = _selection[i];
+                        if (!_em.Exists(e)) continue;
+                        if (!_em.HasComponent<TheWaningBorder.Humans.MinerTag>(e)) continue;
+
+                        CommandGateway.IssueGather(_em, e, target, depositLocation);
+                    }
+                }
+                else
+                {
+                    // Default: move to resource position
+                    IssueFormationMove(clickWorld);
+                }
+                break;
+
+            case TargetType.Ground:
+            default:
+                // Move command
+                IssueFormationMove(clickWorld);
+                break;
+        }
+    }
+
+    private bool IsSetRallyPointMode()
+    {
+        return _rallyMode;
+    }
+
+    private enum TargetType
+    {
+        Ground,
+        Enemy,
+        FriendlyUnit,
+        Resource
+    }
+
+    private TargetType DetermineTargetType(Entity target)
+    {
+        if (target == Entity.Null || !_em.Exists(target))
+            return TargetType.Ground;
+
+        // Check if it's a resource node
+        if (_em.HasComponent<TheWaningBorder.AI.IronMineTag>(target))
+            return TargetType.Resource;
+
+        // Check if it has a faction
+        if (!_em.HasComponent<FactionTag>(target))
+            return TargetType.Ground;
+
+        var targetFaction = _em.GetComponentData<FactionTag>(target).Value;
+
+        // Assume player is Faction.Blue for now
+        if (targetFaction == Faction.Blue)
+            return TargetType.FriendlyUnit;
+        else
+            return TargetType.Enemy;
+    }
+
+    private struct UnitCapabilities
+    {
+        public bool CanAttack;
+        public bool CanHeal;
+        public bool CanGather;
+        public bool CanBuild;
+    }
+
+    private UnitCapabilities DetermineCapabilities()
+    {
+        var caps = new UnitCapabilities();
+
+        for (int i = 0; i < _selection.Count; i++)
         {
             var e = _selection[i];
-            if (!_em.Exists(e) || !_em.HasComponent<LocalTransform>(e)) continue;
-            selCenter += _em.GetComponentData<LocalTransform>(e).Position;
-            alive++;
-        }
-        if (alive > 0) selCenter /= alive;
+            if (!_em.Exists(e)) continue;
 
-        float3 forward = math.normalizesafe(new float3(center.x - selCenter.x, 0, center.z - selCenter.z));
-        if (math.lengthsq(forward) < 1e-4f)
+            // Check for combat units
+            if (_em.HasComponent<Damage>(e))
+                caps.CanAttack = true;
+
+            // Check for healers (would have specific tag)
+            if (CanHeal(e))
+                caps.CanHeal = true;
+
+            // Check for miners
+            if (_em.HasComponent<TheWaningBorder.Humans.MinerTag>(e))
+                caps.CanGather = true;
+
+            // Check for builders
+            if (_em.HasComponent<CanBuild>(e))
+                caps.CanBuild = true;
+        }
+
+        return caps;
+    }
+
+    private bool CanHeal(Entity e)
+    {
+        // Placeholder: Check if unit has healing capability
+        // TODO: Add proper healing tag/component when Litharch is implemented
+        return false;
+    }
+
+    private void IssueFormationMove(float3 clickWorld)
+    {
+        // Count units (excluding buildings)
+        int count = 0;
+        for (int i = 0; i < _selection.Count; i++)
         {
-            var cam = Camera.main;
-            forward = cam ? new float3(cam.transform.forward.x, 0, cam.transform.forward.z) : new float3(0, 0, 1);
-            forward = math.normalizesafe(forward);
-            if (math.lengthsq(forward) < 1e-4f) forward = new float3(0, 0, 1);
+            if (!_em.Exists(_selection[i])) continue;
+            if (_em.HasComponent<BuildingTag>(_selection[i])) continue;
+            count++;
         }
-        float3 right = new float3(forward.z, 0, -forward.x);
 
-        float unitR = 0.6f;
-        {
-            int samples = math.min(count, 6);
-            float acc = 0f; int n = 0;
-            for (int i = 0; i < samples; i++)
-            {
-                var e = _selection[i];
-                if (_em.Exists(e) && _em.HasComponent<Radius>(e))
-                { acc += _em.GetComponentData<Radius>(e).Value; n++; }
-            }
-            if (n > 0) unitR = math.max(0.45f, acc / n);
-        }
-        float spacing = unitR * 2.4f;
+        if (count == 0) return;
 
-        int cols = (int)math.ceil(math.sqrt(count));
-        int rows = (int)math.ceil(count / (float)cols);
+        // Simple formation calculation
+        int cols = Mathf.CeilToInt(Mathf.Sqrt(count));
+        int rows = Mathf.CeilToInt((float)count / cols);
 
-        float width = (cols - 1) * spacing;
-        float height = (rows - 1) * spacing;
-        float3 topLeft = center - right * (width * 0.5f) - forward * (height * 0.5f);
+        float spacing = 2f;
+        float3 forward = new float3(0, 0, 1);
+        float3 right = new float3(1, 0, 0);
+
+        float halfWidth = (cols - 1) * spacing * 0.5f;
+        float halfDepth = (rows - 1) * spacing * 0.5f;
+        float3 topLeft = clickWorld - right * halfWidth + forward * halfDepth;
 
         int idx = 0;
         for (int r = 0; r < rows; r++)
         {
             for (int c = 0; c < cols; c++)
             {
-                if (idx >= count) break;
-                var e = _selection[idx++]; 
-                if (!_em.Exists(e)) continue;
+                if (idx >= _selection.Count) break;
 
-                // Skip buildings when issuing movement
-                if (_em.HasComponent<BuildingTag>(e)) continue;
+                // Find next valid unit
+                Entity e = Entity.Null;
+                while (idx < _selection.Count)
+                {
+                    var candidate = _selection[idx];
+                    idx++;
+                    if (_em.Exists(candidate) && !_em.HasComponent<BuildingTag>(candidate))
+                    {
+                        e = candidate;
+                        break;
+                    }
+                }
 
-                float3 slot = topLeft + right * (c * spacing) + forward * (r * spacing);
+                if (e == Entity.Null) break;
 
-                if (!_em.HasComponent<MoveCommand>(e)) _em.AddComponent<MoveCommand>(e);
+                float3 slot = topLeft + right * (c * spacing) - forward * (r * spacing);
+                CommandGateway.IssueMove(_em,e, slot);
 
-                _em.SetComponentData(e, new MoveCommand { Destination = slot });
                 Debug.DrawLine(
                     (Vector3)_em.GetComponentData<LocalTransform>(e).Position,
                     (Vector3)slot, Color.cyan, 1.0f);
-
-                if (_em.HasComponent<AttackCommand>(e)) _em.RemoveComponent<AttackCommand>(e);
-                if (_em.HasComponent<Target>(e)) _em.SetComponentData(e, new Target { Value = Entity.Null });
             }
         }
+    }
+
+    private Entity FindNearestGatherersHut()
+    {
+        // Find the nearest GatherersHut for the player
+        Entity nearest = Entity.Null;
+        float nearestDist = float.MaxValue;
+
+        var query = _em.CreateEntityQuery(typeof(GathererHutTag), typeof(FactionTag), typeof(LocalTransform));
+        var ents = query.ToEntityArray(Allocator.Temp);
+        var transforms = query.ToComponentDataArray<LocalTransform>(Allocator.Temp);
+        var factions = query.ToComponentDataArray<FactionTag>(Allocator.Temp);
+
+        for (int i = 0; i < ents.Length; i++)
+        {
+            if (factions[i].Value != Faction.Blue) continue;
+
+            float dist = math.distance(transforms[i].Position, float3.zero); // TODO: use avg selected unit position
+            if (dist < nearestDist)
+            {
+                nearestDist = dist;
+                nearest = ents[i];
+            }
+        }
+
+        ents.Dispose();
+        transforms.Dispose();
+        factions.Dispose();
+
+        return nearest;
     }
 
     // ---------------- Maintenance ----------------
@@ -355,7 +496,7 @@ public class RTSInput : MonoBehaviour
         float yMin = Mathf.Min(a.y, b.y);
         float xMax = Mathf.Max(a.x, b.x);
         float yMax = Mathf.Max(a.y, b.y);
-        return Rect.MinMaxRect(xMin, yMin, xMax, yMax);
+        return Rect.MinMaxRect(xMin,yMin, xMax, yMax);
     }
 
     static Rect ScreenToGuiRect(Rect screenRect)
@@ -437,20 +578,18 @@ public class RTSInput : MonoBehaviour
         GUI.color = old;
     }
 
-    static void DrawGuiRectBorder(Rect r, float thickness, Color c)
-    {
-        DrawGuiRect(new Rect(r.xMin, r.yMin, r.width, thickness), c);
-        DrawGuiRect(new Rect(r.xMin, r.yMin, thickness, r.height), c);
-        DrawGuiRect(new Rect(r.xMax - thickness, r.yMin, thickness, r.height), c);
-        DrawGuiRect(new Rect(r.xMin, r.yMax - thickness, r.width, thickness), c);
-    }
-
     void OnGUI()
     {
-        if (!_isDragging) return;
+        if (_isDragging)
+        {
+            var guiRect = ScreenToGuiRect(_dragScreenRect);
+            DrawGuiRect(guiRect, new Color(0f, 1f, 0f, 0.15f));
+        }
 
-        var guiRect = ScreenToGuiRect(_dragScreenRect);
-        DrawGuiRect(guiRect, new Color(0.2f, 0.6f, 1f, 0.10f));
-        DrawGuiRectBorder(guiRect, 2f, new Color(0.2f, 0.6f, 1f, 0.85f));
+        if (_showHelp)
+        {
+            GUI.Label(new Rect(10, 10, 300, 100),
+                "Left-click/drag: Select\nRight-click: Move/Attack\nR: Rally mode\nESC: Clear");
+        }
     }
 }

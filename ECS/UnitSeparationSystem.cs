@@ -177,8 +177,7 @@ public partial struct UnitSeparationSystem : ISystem
         allRadii.Dispose();
     }
 
-    [BurstCompile]
-    private static int2 GetCellKey(float3 position)
+    private static int2 GetCellKey(in float3 position)
     {
         return new int2(
             (int)math.floor(position.x / CellSize),

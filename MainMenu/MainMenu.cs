@@ -2,6 +2,7 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using System.IO;
+using TheWaningBorder.Multiplayer;
 
 public static class MenuBootstrap
 {
@@ -63,10 +64,14 @@ public class MainMenu : MonoBehaviour
     Rect _win = new Rect(40, 40, 420, 480);
     string _error;
 
-    // NEW:
+    // Spawn layout settings
     SpawnLayout _layout = GameSettings.SpawnLayout;
     TwoSidesPreset _twoSides = GameSettings.TwoSides;
     int _spawnSeed = GameSettings.SpawnSeed;
+
+    // Multiplayer lobby
+    private GameObject _multiplayerLobbyGO;
+    private bool _showMultiplayerLobby = false;
 
     void Awake()
     {
@@ -157,6 +162,15 @@ public class MainMenu : MonoBehaviour
         GUILayout.Label("You = Blue. Others are AI and hostile to each other.");
 
         GUILayout.Space(10);
+
+        // Multiplayer button (Netcode for Entities)
+        if (GUILayout.Button("Multiplayer (LAN)", GUILayout.Height(36)))
+        {
+            OpenMultiplayerLobby();
+        }
+
+        GUILayout.Space(10);
+        
         if (GUILayout.Button("Start Game", GUILayout.Height(36)))
         {
             // Apply settings
@@ -181,6 +195,22 @@ public class MainMenu : MonoBehaviour
         }
 
         GUI.DragWindow(new Rect(0,0,10000,20));
+    }
+
+    /// <summary>
+    /// Open the multiplayer lobby UI
+    /// </summary>
+    void OpenMultiplayerLobby()
+    {
+        if (_multiplayerLobbyGO == null)
+        {
+            _multiplayerLobbyGO = new GameObject("MultiplayerLobby");
+            _multiplayerLobbyGO.AddComponent<TheWaningBorder.Multiplayer.MultiplayerLobby>();
+            _showMultiplayerLobby = true;
+            
+            // Hide the main menu window while lobby is open
+            gameObject.SetActive(false);
+        }
     }
 
     static int FindSceneIndexByName(string name)

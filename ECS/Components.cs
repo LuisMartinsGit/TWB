@@ -680,6 +680,36 @@ public struct MiningTarget : IComponentData
     public float3 TargetPosition;
 }
 
+// ==================== Command Components ====================
+// These components represent player/AI commands to units
+
+/// <summary>
+/// Command to build a structure at a specific position.
+/// </summary>
+public struct BuildCommand : IComponentData
+{
+    public FixedString64Bytes BuildingId;
+    public float3 Position;
+    public Entity TargetBuilding; // The building being constructed (Entity.Null if not yet built)
+}
+
+/// <summary>
+/// Command to gather from a resource node (e.g., Iron Mine).
+/// </summary>
+public struct GatherCommand : IComponentData
+{
+    public Entity ResourceNode;
+    public Entity DepositLocation; // Where to return resources (e.g., GatherersHut)
+}
+
+/// <summary>
+/// Command to heal a friendly unit.
+/// </summary>
+public struct HealCommand : IComponentData
+{
+    public Entity Target;
+}
+
 namespace TheWaningBorder.AI
 {
     public struct IronMineTag : IComponentData {}   // tag component

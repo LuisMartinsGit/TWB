@@ -166,8 +166,7 @@ public partial struct ArrowProjectileSystem : ISystem
     /// Calculate arrow rotation pointing along velocity vector
     /// Allows full range of pitch angles for realistic arcing
     /// </summary>
-    [BurstCompile]
-    private static quaternion CalculateArrowRotation(float3 velocity)
+    private static quaternion CalculateArrowRotation(in float3 velocity)
     {
         // Get horizontal direction and speed
         float3 horizontalDir = math.normalize(new float3(velocity.x, 0, velocity.z));
