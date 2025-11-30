@@ -30,6 +30,7 @@ namespace TheWaningBorder.Multiplayer
         public event Action<LanDiscoveredGame> OnGameDiscovered;
         public event Action<string> OnGameLost;
 
+
         void OnDestroy()
         {
             StopBroadcasting();
@@ -57,8 +58,7 @@ namespace TheWaningBorder.Multiplayer
                 _broadcastClient.EnableBroadcast = true;
                 _isBroadcasting = true;
                 _lastBroadcastTime = Time.time;
-
-                Debug.Log($"[LanNetworkDiscovery] Started broadcasting: {gameName}");
+                Debug.Log($"[LanNetworkDiscovery] Started broadcasting on port {BROADCAST_PORT} for game \"{gameName}\"");
             }
             catch (Exception e)
             {

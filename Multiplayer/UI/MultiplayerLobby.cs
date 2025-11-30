@@ -25,18 +25,27 @@ namespace TheWaningBorder.Multiplayer
 
         void Awake()
         {
-            var go = new GameObject("NetworkDiscovery");
-            _networkDiscovery = go.AddComponent<LanNetworkDiscovery>();
+            // Ensure the discovery manager exists
+            if (MultiplayerDiscoveryManager.Instance == null)
+            {
+                var mgrObj = new GameObject("MultiplayerDiscoveryManager");
+                mgrObj.AddComponent<MultiplayerDiscoveryManager>();
+                Debug.Log("[MultiplayerLobby] Created MultiplayerDiscoveryManager instance");
+            }
+            // Use persistent discovery manager
+            _networkDiscovery = MultiplayerDiscoveryManager.Instance.GetDiscovery();
             _networkDiscovery.OnGameDiscovered += OnGameDiscovered;
             _networkDiscovery.OnGameLost += OnGameLost;
+            Debug.Log("[MultiplayerLobby] Awake completed, discovery ready");
         }
 
         void OnDestroy()
         {
+            // Unsubscribe but keep manager alive
             if (_networkDiscovery != null)
             {
                 _networkDiscovery.OnGameDiscovered -= OnGameDiscovered;
-                _networkDiscovery.OnGameLost -= OnGameLost; 
+                _networkDiscovery.OnGameLost -= OnGameLost;
             }
         }
 
@@ -48,14 +57,12 @@ namespace TheWaningBorder.Multiplayer
         private void DrawWindow(int windowId)
         {
             GUILayout.BeginVertical();
-
             switch (_currentState)
             {
                 case LobbyState.MainMenu: DrawMainMenu(); break;
                 case LobbyState.HostSetup: DrawHostSetup(); break;
                 case LobbyState.BrowserGames: DrawGameBrowser(); break;
             }
-
             GUILayout.EndVertical();
             GUI.DragWindow();
         }
@@ -73,7 +80,7 @@ namespace TheWaningBorder.Multiplayer
             if (GUILayout.Button("Join Game", GUILayout.Height(50)))
             {
                 _currentState = LobbyState.BrowserGames;
-                _networkDiscovery.StartDiscovery();
+                MultiplayerDiscoveryManager.Instance.StartDiscovery();
             }
 
             if (GUILayout.Button("Back", GUILayout.Height(40)))
@@ -136,7 +143,7 @@ namespace TheWaningBorder.Multiplayer
             GUILayout.Space(10);
             if (GUILayout.Button("Back", GUILayout.Height(30)))
             {
-                _networkDiscovery.StopDiscovery();
+                MultiplayerDiscoveryManager.Instance.StopAll();
                 _currentState = LobbyState.MainMenu;
             }
         }
@@ -144,52 +151,30 @@ namespace TheWaningBorder.Multiplayer
         private void HostGame()
         {
             Debug.Log("[MultiplayerLobby] Starting host");
-
-            // Set game settings
             GameSettings.IsMultiplayer = true;
             GameSettings.NetworkRole = NetworkRole.Server;
             GameSettings.LocalPlayerFaction = Faction.Blue;
-
-            // Start broadcasting
-            _networkDiscovery.StartBroadcasting(_gameName, _playerName, _port);
-
-            // Create server world via ClientServerBootstrap
+            MultiplayerDiscoveryManager.Instance.StartBroadcasting(_gameName, _playerName, _port);
+            Debug.Log($"[MultiplayerLobby] Broadcasting on UDP port {_port}");
             var server = ClientServerBootstrap.CreateServerWorld("ServerWorld");
-            
-            // Start listening
             var endpoint = Unity.Networking.Transport.NetworkEndpoint.AnyIpv4.WithPort(_port);
-            // Start listening via Request Entity
             var listenRequest = server.EntityManager.CreateEntity(typeof(NetworkStreamRequestListen));
             server.EntityManager.SetComponentData(listenRequest, new NetworkStreamRequestListen { Endpoint = endpoint });
-
             Debug.Log("[MultiplayerLobby] Server started");
-
-            // Load game scene
             UnityEngine.SceneManagement.SceneManager.LoadScene("Game");
         }
 
         private void JoinGame(LanDiscoveredGame game)
         {
             Debug.Log($"[MultiplayerLobby] Joining game at {game.IPAddress}");
-
-            _networkDiscovery.StopDiscovery();
-
-            // Set game settings
+            MultiplayerDiscoveryManager.Instance.StopAll();
             GameSettings.IsMultiplayer = true;
             GameSettings.NetworkRole = NetworkRole.Client;
-
-            // Create client world
             var client = ClientServerBootstrap.CreateClientWorld("ClientWorld");
-            
-            // Connect to server
             var endpoint = Unity.Networking.Transport.NetworkEndpoint.Parse(game.IPAddress, game.GameInfo.GamePort);
-            // Connect via Request Entity
             var connectRequest = client.EntityManager.CreateEntity(typeof(NetworkStreamRequestConnect));
             client.EntityManager.SetComponentData(connectRequest, new NetworkStreamRequestConnect { Endpoint = endpoint });
-
             Debug.Log("[MultiplayerLobby] Client connected");
-
-            // Load game scene
             UnityEngine.SceneManagement.SceneManager.LoadScene("Game");
         }
 
