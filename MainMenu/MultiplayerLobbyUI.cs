@@ -3,29 +3,53 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using System;
 using System.IO;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace TheWaningBorder.Menu
 {
     /// <summary>
-    /// Multiplayer lobby UI with player slots.
-    /// Handles hosting, joining, and player slot management.
-    /// Players join empty slots or replace AI players.
+    /// Multiplayer lobby UI with full networking.
+    /// Handles hosting, joining, and lobby state synchronization.
+    /// 
+    /// Network Protocol (all UDP on port 47777):
+    /// - TWB_GAME|GameName|HostName|GamePort         (Host broadcasts availability)
+    /// - TWB_JOIN|PlayerName                         (Client requests to join)
+    /// - TWB_LOBBY|SlotCount|Slot0Data|Slot1Data|... (Host broadcasts lobby state)
+    /// - TWB_ACCEPT|SlotIndex                        (Host accepts join)
+    /// - TWB_LEAVE|SlotIndex                         (Client leaves)
+    /// - TWB_START|Port                              (Host signals game start)
     /// </summary>
     public class MultiplayerLobbyUI : MonoBehaviour
     {
         public event Action OnBackPressed;
 
         private const string GameSceneName = "Game";
+        private const int BROADCAST_PORT = 47777;
+        private const float BROADCAST_INTERVAL = 1.0f;
+        private const float LOBBY_SYNC_INTERVAL = 0.5f;
+        private const float DISCOVERY_TIMEOUT = 5.0f;
+        
+        // Message prefixes
+        private const string MSG_GAME = "TWB_GAME|";
+        private const string MSG_JOIN = "TWB_JOIN|";
+        private const string MSG_LOBBY = "TWB_LOBBY|";
+        private const string MSG_LEAVE = "TWB_LEAVE|";
+        private const string MSG_START = "TWB_START|";
+        private const string MSG_ACCEPT = "TWB_ACCEPT|";
 
         // Lobby state machine
         private enum LobbyState
         {
-            MainChoice,     // Choose Host or Join
-            HostSetup,      // Configure host settings
-            HostLobby,      // Waiting for players as host
-            BrowseGames,    // Browsing available games
-            ClientLobby     // In lobby as client
+            MainChoice,
+            HostSetup,
+            HostLobby,
+            BrowseGames,
+            ClientLobby,
+            Connecting
         }
         private LobbyState _state = LobbyState.MainChoice;
 
@@ -46,9 +70,23 @@ namespace TheWaningBorder.Menu
         private bool _fogOfWar = GameSettings.FogOfWarEnabled;
         private int _mapHalfSize = GameSettings.MapHalfSize;
 
-        // Network discovery (simulated for now - integrate with your LanNetworkDiscovery)
+        // Network state
+        private UdpClient _udpClient;
+        private bool _isHost;
+        private bool _isConnected;
+        private float _lastBroadcastTime;
+        private float _lastLobbySyncTime;
+        private string _hostIP;
+        private int _mySlotIndex = -1;
+        
+        // Client tracking (host only)
+        private Dictionary<string, ClientInfo> _connectedClients = new Dictionary<string, ClientInfo>();
+        
+        // Discovery
         private List<DiscoveredGame> _discoveredGames = new List<DiscoveredGame>();
-        private float _discoveryTimer = 0f;
+
+        // Lobby slots (synchronized)
+        private NetworkSlot[] _networkSlots = new NetworkSlot[8];
 
         // Error/status
         private string _error;
@@ -61,15 +99,43 @@ namespace TheWaningBorder.Menu
         private GUIStyle _gameListStyle;
         private bool _stylesInit = false;
 
-        // Simple data class for discovered games (replace with your LanDiscoveredGame)
-        private class DiscoveredGame
+        // Data classes
+        [Serializable]
+        public class DiscoveredGame
         {
             public string GameName;
             public string HostName;
             public string IPAddress;
             public ushort Port;
-            public int CurrentPlayers;
-            public int MaxPlayers;
+            public DateTime LastSeen;
+        }
+
+        public class ClientInfo
+        {
+            public string PlayerName;
+            public int SlotIndex;
+            public IPEndPoint EndPoint;
+            public DateTime LastSeen;
+        }
+
+        public class NetworkSlot
+        {
+            public SlotType Type = SlotType.Empty;
+            public string PlayerName = "";
+            public LobbyAIDifficulty AIDifficulty = LobbyAIDifficulty.Normal;
+            public string ClientIP = ""; // For tracking which client owns this slot
+        }
+
+        void Awake()
+        {
+            // Keep running when window loses focus (essential for multiplayer testing)
+            Application.runInBackground = true;
+            
+            // Initialize network slots
+            for (int i = 0; i < 8; i++)
+            {
+                _networkSlots[i] = new NetworkSlot();
+            }
         }
 
         void OnEnable()
@@ -77,74 +143,594 @@ namespace TheWaningBorder.Menu
             _state = LobbyState.MainChoice;
             _error = null;
             _status = null;
-            
-            // Sync settings
-            _layout = GameSettings.SpawnLayout;
-            _twoSides = GameSettings.TwoSides;
-            _spawnSeed = GameSettings.SpawnSeed;
-            _fogOfWar = GameSettings.FogOfWarEnabled;
-            _mapHalfSize = Mathf.Clamp(GameSettings.MapHalfSize, 64, 512);
+            _isHost = false;
+            _isConnected = false;
+            _mySlotIndex = -1;
         }
 
         void OnDisable()
         {
-            // Stop any network discovery here
-            _discoveredGames.Clear();
+            Cleanup();
+        }
+
+        void OnDestroy()
+        {
+            Cleanup();
+        }
+
+        private void Cleanup()
+        {
+            if (_udpClient != null)
+            {
+                // If we're a client, send leave message
+                if (!_isHost && _isConnected && _mySlotIndex >= 0)
+                {
+                    SendToHost($"{MSG_LEAVE}{_mySlotIndex}");
+                }
+                
+                try { _udpClient.Close(); } catch { }
+                _udpClient = null;
+            }
+            _isHost = false;
+            _isConnected = false;
+            _connectedClients.Clear();
         }
 
         void Update()
         {
+            if (_udpClient == null) return;
+
+            // Receive messages
+            ReceiveMessages();
+
+            if (_isHost)
+            {
+                // Host: broadcast game availability
+                if (Time.time - _lastBroadcastTime >= BROADCAST_INTERVAL)
+                {
+                    BroadcastGameAvailability();
+                    _lastBroadcastTime = Time.time;
+                }
+
+                // Host: broadcast lobby state to connected clients
+                if (Time.time - _lastLobbySyncTime >= LOBBY_SYNC_INTERVAL)
+                {
+                    BroadcastLobbyState();
+                    _lastLobbySyncTime = Time.time;
+                }
+
+                // Cleanup disconnected clients
+                CleanupDisconnectedClients();
+            }
+            else if (_isConnected || _state == LobbyState.Connecting)
+            {
+                // Client: send heartbeat (re-send join request) to keep connection alive
+                if (Time.time - _lastBroadcastTime >= BROADCAST_INTERVAL)
+                {
+                    SendHeartbeat();
+                    _lastBroadcastTime = Time.time;
+                }
+            }
+
+            // Discovery: cleanup stale games
             if (_state == LobbyState.BrowseGames)
             {
-                // Simulate game discovery (replace with real network discovery)
-                _discoveryTimer += Time.deltaTime;
+                _discoveredGames.RemoveAll(g => 
+                    (DateTime.Now - g.LastSeen).TotalSeconds > DISCOVERY_TIMEOUT);
             }
         }
+
+        private void SendHeartbeat()
+        {
+            // Re-send join request as heartbeat - host will recognize us and update LastSeen
+            if (!string.IsNullOrEmpty(_hostIP))
+            {
+                try
+                {
+                    string message = $"{MSG_JOIN}{_playerName}";
+                    byte[] data = Encoding.UTF8.GetBytes(message);
+                    IPEndPoint hostEP = new IPEndPoint(IPAddress.Parse(_hostIP), BROADCAST_PORT);
+                    _udpClient.Send(data, data.Length, hostEP);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError($"[MultiplayerLobbyUI] Heartbeat failed: {e.Message}");
+                }
+            }
+        }
+
+        // ==================== NETWORK - CORE ====================
+
+        private void StartHost()
+        {
+            Cleanup();
+
+            try
+            {
+                // Use SO_REUSEADDR to allow host and client on same machine (for testing)
+                _udpClient = new UdpClient();
+                _udpClient.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+                _udpClient.Client.Bind(new IPEndPoint(IPAddress.Any, BROADCAST_PORT));
+                _udpClient.EnableBroadcast = true;
+                _udpClient.Client.ReceiveTimeout = 10;
+                _isHost = true;
+                _isConnected = true;
+                _mySlotIndex = 0;
+
+                // Initialize slots from LobbyConfig
+                SyncSlotsFromLobbyConfig();
+                
+                // Set slot 0 as host
+                _networkSlots[0].Type = SlotType.Human;
+                _networkSlots[0].PlayerName = _playerName;
+                _networkSlots[0].ClientIP = "HOST";
+
+                Debug.Log($"[MultiplayerLobbyUI] Host started on UDP port {BROADCAST_PORT}");
+            }
+            catch (Exception e)
+            {
+                _error = $"Failed to start host: {e.Message}";
+                Debug.LogError($"[MultiplayerLobbyUI] {_error}");
+            }
+        }
+
+        private void StartClient()
+        {
+            Cleanup();
+
+            try
+            {
+                // Client must listen on BROADCAST_PORT to receive game announcements
+                // Use SO_REUSEADDR to allow multiple clients on same machine (for testing)
+                _udpClient = new UdpClient();
+                _udpClient.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+                _udpClient.Client.Bind(new IPEndPoint(IPAddress.Any, BROADCAST_PORT));
+                _udpClient.EnableBroadcast = true;
+                _udpClient.Client.ReceiveTimeout = 10;
+                _isHost = false;
+                _isConnected = false;
+
+                Debug.Log($"[MultiplayerLobbyUI] Client started, listening on UDP port {BROADCAST_PORT}");
+            }
+            catch (Exception e)
+            {
+                _error = $"Failed to start client: {e.Message}";
+                Debug.LogError($"[MultiplayerLobbyUI] {_error}");
+            }
+        }
+
+        private void ReceiveMessages()
+        {
+            if (_udpClient == null) return;
+
+            try
+            {
+                while (_udpClient.Available > 0)
+                {
+                    IPEndPoint remoteEP = new IPEndPoint(IPAddress.Any, 0);
+                    byte[] data = _udpClient.Receive(ref remoteEP);
+                    string message = Encoding.UTF8.GetString(data);
+                    
+                    ProcessMessage(message, remoteEP);
+                }
+            }
+            catch (SocketException)
+            {
+                // Timeout - normal
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[MultiplayerLobbyUI] Receive error: {e.Message}");
+            }
+        }
+
+        private void ProcessMessage(string message, IPEndPoint sender)
+        {
+            string senderIP = sender.Address.ToString();
+
+            // Debug: log all received messages
+            Debug.Log($"[MultiplayerLobbyUI] Received from {senderIP}: {message.Substring(0, Math.Min(50, message.Length))}...");
+
+            if (message.StartsWith(MSG_GAME))
+            {
+                // Game broadcast (client receives this)
+                if (!_isHost)
+                {
+                    ProcessGameBroadcast(message, senderIP);
+                }
+            }
+            else if (message.StartsWith(MSG_JOIN))
+            {
+                // Join request (host receives this)
+                if (_isHost)
+                {
+                    ProcessJoinRequest(message, sender);
+                }
+            }
+            else if (message.StartsWith(MSG_LOBBY))
+            {
+                // Lobby state update (client receives this)
+                // Process even if not yet "connected" - we might be waiting for accept
+                if (!_isHost)
+                {
+                    ProcessLobbyUpdate(message);
+                }
+            }
+            else if (message.StartsWith(MSG_ACCEPT))
+            {
+                // Join accepted (client receives this)
+                if (!_isHost)
+                {
+                    ProcessJoinAccepted(message, senderIP);
+                }
+            }
+            else if (message.StartsWith(MSG_LEAVE))
+            {
+                // Player leaving (host receives this)
+                if (_isHost)
+                {
+                    ProcessLeaveRequest(message, senderIP);
+                }
+            }
+            else if (message.StartsWith(MSG_START))
+            {
+                // Game starting (client receives this)
+                if (!_isHost)
+                {
+                    ProcessGameStart(message);
+                }
+            }
+        }
+
+        // ==================== HOST NETWORK LOGIC ====================
+
+        private void BroadcastGameAvailability()
+        {
+            if (_udpClient == null) return;
+
+            try
+            {
+                string message = $"{MSG_GAME}{_gameName}|{_playerName}|{_port}";
+                byte[] data = Encoding.UTF8.GetBytes(message);
+                IPEndPoint broadcast = new IPEndPoint(IPAddress.Broadcast, BROADCAST_PORT);
+                _udpClient.Send(data, data.Length, broadcast);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[MultiplayerLobbyUI] Broadcast failed: {e.Message}");
+            }
+        }
+
+        private void BroadcastLobbyState()
+        {
+            if (_udpClient == null) return;
+
+            // Build lobby state message
+            // Format: TWB_LOBBY|SlotCount|Type,Name,Difficulty|Type,Name,Difficulty|...
+            var sb = new StringBuilder();
+            sb.Append(MSG_LOBBY);
+            sb.Append(LobbyConfig.ActiveSlotCount);
+
+            for (int i = 0; i < LobbyConfig.ActiveSlotCount; i++)
+            {
+                var slot = _networkSlots[i];
+                sb.Append($"|{(int)slot.Type},{slot.PlayerName},{(int)slot.AIDifficulty}");
+            }
+
+            string message = sb.ToString();
+            byte[] data = Encoding.UTF8.GetBytes(message);
+
+            // Send to all connected clients
+            foreach (var client in _connectedClients.Values)
+            {
+                try
+                {
+                    _udpClient.Send(data, data.Length, client.EndPoint);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError($"[MultiplayerLobbyUI] Failed to send to {client.EndPoint}: {e.Message}");
+                }
+            }
+        }
+
+        private void ProcessJoinRequest(string message, IPEndPoint sender)
+        {
+            // Format: TWB_JOIN|PlayerName
+            string[] parts = message.Split('|');
+            if (parts.Length < 2) return;
+
+            string playerName = parts[1];
+            string senderIP = sender.Address.ToString();
+
+            // Check if this client already has a slot (reconnect or heartbeat)
+            if (_connectedClients.TryGetValue(senderIP, out var existingClient))
+            {
+                // Update last seen time
+                existingClient.LastSeen = DateTime.Now;
+                existingClient.EndPoint = sender; // Update endpoint in case port changed
+                
+                // Re-send acceptance in case they missed it
+                string acceptMsg = $"{MSG_ACCEPT}{existingClient.SlotIndex}";
+                byte[] data = Encoding.UTF8.GetBytes(acceptMsg);
+                _udpClient.Send(data, data.Length, sender);
+                
+                Debug.Log($"[MultiplayerLobbyUI] Re-confirmed {playerName} in slot {existingClient.SlotIndex}");
+                return;
+            }
+
+            Debug.Log($"[MultiplayerLobbyUI] New join request from {playerName} at {senderIP}");
+
+            // Find an empty or AI slot for this player
+            int assignedSlot = -1;
+            for (int i = 1; i < LobbyConfig.ActiveSlotCount; i++) // Start from 1, slot 0 is host
+            {
+                if (_networkSlots[i].Type == SlotType.Empty || _networkSlots[i].Type == SlotType.AI)
+                {
+                    // Check if not already taken by another client
+                    if (string.IsNullOrEmpty(_networkSlots[i].ClientIP) || _networkSlots[i].Type == SlotType.AI)
+                    {
+                        assignedSlot = i;
+                        break;
+                    }
+                }
+            }
+
+            if (assignedSlot >= 0)
+            {
+                // Assign player to slot
+                _networkSlots[assignedSlot].Type = SlotType.Human;
+                _networkSlots[assignedSlot].PlayerName = playerName;
+                _networkSlots[assignedSlot].ClientIP = senderIP;
+
+                // Track client
+                _connectedClients[senderIP] = new ClientInfo
+                {
+                    PlayerName = playerName,
+                    SlotIndex = assignedSlot,
+                    EndPoint = sender,
+                    LastSeen = DateTime.Now
+                };
+
+                // Send acceptance with slot assignment
+                string acceptMsg = $"{MSG_ACCEPT}{assignedSlot}";
+                byte[] data = Encoding.UTF8.GetBytes(acceptMsg);
+                _udpClient.Send(data, data.Length, sender);
+
+                Debug.Log($"[MultiplayerLobbyUI] Assigned {playerName} to slot {assignedSlot}");
+                
+                // Immediately broadcast updated lobby state
+                BroadcastLobbyState();
+            }
+            else
+            {
+                Debug.Log($"[MultiplayerLobbyUI] No slots available for {playerName}");
+                // TODO: Send rejection message
+            }
+        }
+
+        private void ProcessLeaveRequest(string message, string senderIP)
+        {
+            // Format: TWB_LEAVE|SlotIndex
+            string[] parts = message.Split('|');
+            if (parts.Length < 2) return;
+
+            if (int.TryParse(parts[1], out int slotIndex) && slotIndex >= 0 && slotIndex < 8)
+            {
+                // Verify this client owns this slot
+                if (_networkSlots[slotIndex].ClientIP == senderIP)
+                {
+                    Debug.Log($"[MultiplayerLobbyUI] Player left slot {slotIndex}");
+                    
+                    _networkSlots[slotIndex].Type = SlotType.AI;
+                    _networkSlots[slotIndex].PlayerName = "";
+                    _networkSlots[slotIndex].ClientIP = "";
+                    
+                    _connectedClients.Remove(senderIP);
+                    
+                    BroadcastLobbyState();
+                }
+            }
+        }
+
+        private void CleanupDisconnectedClients()
+        {
+            var staleClients = _connectedClients
+                .Where(kvp => (DateTime.Now - kvp.Value.LastSeen).TotalSeconds > 10)
+                .Select(kvp => kvp.Key)
+                .ToList();
+
+            foreach (var ip in staleClients)
+            {
+                var client = _connectedClients[ip];
+                Debug.Log($"[MultiplayerLobbyUI] Client {client.PlayerName} timed out");
+                
+                // Free up their slot
+                if (client.SlotIndex >= 0 && client.SlotIndex < 8)
+                {
+                    _networkSlots[client.SlotIndex].Type = SlotType.AI;
+                    _networkSlots[client.SlotIndex].PlayerName = "";
+                    _networkSlots[client.SlotIndex].ClientIP = "";
+                }
+                
+                _connectedClients.Remove(ip);
+            }
+        }
+
+        // ==================== CLIENT NETWORK LOGIC ====================
+
+        private void ProcessGameBroadcast(string message, string senderIP)
+        {
+            // Format: TWB_GAME|GameName|HostName|Port
+            string[] parts = message.Split('|');
+            if (parts.Length < 4) return;
+
+            string gameName = parts[1];
+            string hostName = parts[2];
+            if (!ushort.TryParse(parts[3], out ushort port)) return;
+
+            // Update or add discovered game
+            var existing = _discoveredGames.Find(g => g.IPAddress == senderIP);
+            if (existing != null)
+            {
+                existing.GameName = gameName;
+                existing.HostName = hostName;
+                existing.Port = port;
+                existing.LastSeen = DateTime.Now;
+            }
+            else
+            {
+                _discoveredGames.Add(new DiscoveredGame
+                {
+                    GameName = gameName,
+                    HostName = hostName,
+                    IPAddress = senderIP,
+                    Port = port,
+                    LastSeen = DateTime.Now
+                });
+                Debug.Log($"[MultiplayerLobbyUI] Discovered game: {gameName} at {senderIP}");
+            }
+        }
+
+        private void SendJoinRequest(DiscoveredGame game)
+        {
+            if (_udpClient == null) return;
+
+            _hostIP = game.IPAddress;
+            _status = $"Joining {game.GameName}...";
+            _state = LobbyState.Connecting;
+
+            try
+            {
+                string message = $"{MSG_JOIN}{_playerName}";
+                byte[] data = Encoding.UTF8.GetBytes(message);
+                IPEndPoint hostEP = new IPEndPoint(IPAddress.Parse(game.IPAddress), BROADCAST_PORT);
+                _udpClient.Send(data, data.Length, hostEP);
+                
+                Debug.Log($"[MultiplayerLobbyUI] Sent join request to {game.IPAddress}");
+            }
+            catch (Exception e)
+            {
+                _error = $"Failed to send join request: {e.Message}";
+                Debug.LogError($"[MultiplayerLobbyUI] {_error}");
+                _state = LobbyState.BrowseGames;
+            }
+        }
+
+        private void ProcessJoinAccepted(string message, string senderIP)
+        {
+            // Format: TWB_ACCEPT|SlotIndex
+            string[] parts = message.Split('|');
+            if (parts.Length < 2) return;
+
+            if (int.TryParse(parts[1], out int slotIndex))
+            {
+                _mySlotIndex = slotIndex;
+                _hostIP = senderIP; // Store host IP for future communication
+                _isConnected = true;
+                _state = LobbyState.ClientLobby;
+                _status = $"Connected! You are in slot {slotIndex + 1}";
+                
+                Debug.Log($"[MultiplayerLobbyUI] Join accepted from {senderIP}, assigned to slot {slotIndex}");
+            }
+        }
+
+        private void ProcessLobbyUpdate(string message)
+        {
+            // Format: TWB_LOBBY|SlotCount|Type,Name,Difficulty|...
+            string[] parts = message.Split('|');
+            if (parts.Length < 2) return;
+
+            if (!int.TryParse(parts[1], out int slotCount)) return;
+
+            LobbyConfig.ActiveSlotCount = slotCount;
+
+            for (int i = 0; i < slotCount && i + 2 < parts.Length; i++)
+            {
+                string[] slotParts = parts[i + 2].Split(',');
+                if (slotParts.Length >= 3)
+                {
+                    if (int.TryParse(slotParts[0], out int type))
+                        _networkSlots[i].Type = (SlotType)type;
+                    
+                    _networkSlots[i].PlayerName = slotParts[1];
+                    
+                    if (int.TryParse(slotParts[2], out int diff))
+                        _networkSlots[i].AIDifficulty = (LobbyAIDifficulty)diff;
+                }
+            }
+        }
+
+        private void ProcessGameStart(string message)
+        {
+            Debug.Log("[MultiplayerLobbyUI] Game starting!");
+            
+            // Apply settings and load scene
+            ApplySettingsAndStart();
+        }
+
+        private void SendToHost(string message)
+        {
+            if (_udpClient == null || string.IsNullOrEmpty(_hostIP)) return;
+
+            try
+            {
+                byte[] data = Encoding.UTF8.GetBytes(message);
+                IPEndPoint hostEP = new IPEndPoint(IPAddress.Parse(_hostIP), BROADCAST_PORT);
+                _udpClient.Send(data, data.Length, hostEP);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[MultiplayerLobbyUI] Failed to send to host: {e.Message}");
+            }
+        }
+
+        // ==================== GUI ====================
 
         void OnGUI()
         {
             InitStyles();
-            _windowRect = GUI.Window(10003, _windowRect, DrawWindow, "Multiplayer");
-            
-            if (!string.IsNullOrEmpty(_error))
-            {
-                GUI.color = new Color(1, 0.5f, 0.5f, 1);
-                GUI.Box(new Rect(_windowRect.x, _windowRect.yMax + 8, _windowRect.width, 50), _error);
-                GUI.color = Color.white;
-            }
+            _windowRect = GUI.Window(10002, _windowRect, DrawWindow, "Multiplayer Lobby");
         }
 
         private void InitStyles()
         {
             if (_stylesInit) return;
-            
+
             _headerStyle = new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Bold,
                 richText = true
             };
-            
+
             _slotStyle = new GUIStyle(GUI.skin.box)
             {
                 padding = new RectOffset(8, 8, 4, 4)
             };
-            
+
             _factionLabelStyle = new GUIStyle(GUI.skin.label)
             {
                 fontStyle = FontStyle.Bold,
                 alignment = TextAnchor.MiddleLeft
             };
-            
+
             _gameListStyle = new GUIStyle(GUI.skin.box)
             {
-                padding = new RectOffset(10, 10, 5, 5)
+                padding = new RectOffset(8, 8, 4, 4)
             };
-            
+
             _stylesInit = true;
         }
 
         private void DrawWindow(int windowId)
         {
+            if (!string.IsNullOrEmpty(_error))
+            {
+                GUI.color = Color.red;
+                GUILayout.Label(_error);
+                GUI.color = Color.white;
+            }
+
             switch (_state)
             {
                 case LobbyState.MainChoice:
@@ -162,70 +748,65 @@ namespace TheWaningBorder.Menu
                 case LobbyState.ClientLobby:
                     DrawClientLobby();
                     break;
+                case LobbyState.Connecting:
+                    DrawConnecting();
+                    break;
             }
-            
+
             GUI.DragWindow(new Rect(0, 0, 10000, 25));
         }
 
-        // ==================== MAIN CHOICE ====================
         private void DrawMainChoice()
         {
-            GUILayout.Space(30);
-            GUILayout.Label("<b>LAN Multiplayer</b>", _headerStyle);
-            GUILayout.Space(30);
-            
+            GUILayout.Label("<b>Multiplayer</b>", _headerStyle);
+            GUILayout.Space(20);
+
             if (GUILayout.Button("Host Game", GUILayout.Height(50)))
             {
                 _state = LobbyState.HostSetup;
-                LobbyConfig.SetupMultiplayer(LobbyConfig.ActiveSlotCount);
             }
-            
-            GUILayout.Space(15);
-            
+
+            GUILayout.Space(10);
+
             if (GUILayout.Button("Join Game", GUILayout.Height(50)))
             {
+                StartClient();
                 _state = LobbyState.BrowseGames;
-                StartDiscovery();
             }
-            
+
             GUILayout.FlexibleSpace();
-            
+
             if (GUILayout.Button("Back", GUILayout.Height(40)))
             {
                 OnBackPressed?.Invoke();
             }
-            
+
             GUILayout.Space(10);
         }
 
-        // ==================== HOST SETUP ====================
         private void DrawHostSetup()
         {
             GUILayout.Label("<b>Host Game Setup</b>", _headerStyle);
             GUILayout.Space(10);
-            
-            // Game name
+
             GUILayout.BeginHorizontal();
             GUILayout.Label("Game Name:", GUILayout.Width(100));
             _gameName = GUILayout.TextField(_gameName);
             GUILayout.EndHorizontal();
-            
-            // Player name
+
             GUILayout.BeginHorizontal();
             GUILayout.Label("Your Name:", GUILayout.Width(100));
             _playerName = GUILayout.TextField(_playerName);
             GUILayout.EndHorizontal();
-            
-            // Port
+
             GUILayout.BeginHorizontal();
             GUILayout.Label("Port:", GUILayout.Width(100));
             string portStr = GUILayout.TextField(_port.ToString(), GUILayout.Width(80));
             if (ushort.TryParse(portStr, out ushort p)) _port = p;
             GUILayout.EndHorizontal();
-            
+
             GUILayout.Space(15);
-            
-            // Player count
+
             GUILayout.Label("<b>Number of Players</b>", _headerStyle);
             GUILayout.BeginHorizontal();
             if (GUILayout.Button(" - ", GUILayout.Width(40)))
@@ -234,15 +815,12 @@ namespace TheWaningBorder.Menu
             if (GUILayout.Button(" + ", GUILayout.Width(40)))
                 SetPlayerCount(LobbyConfig.ActiveSlotCount + 1);
             GUILayout.EndHorizontal();
-            
+
             GUILayout.Space(10);
-            
-            // Map options (collapsed)
             DrawMapOptions();
-            
+
             GUILayout.FlexibleSpace();
-            
-            // Buttons
+
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Back", GUILayout.Height(36), GUILayout.Width(100)))
             {
@@ -254,69 +832,69 @@ namespace TheWaningBorder.Menu
                 CreateHostLobby();
             }
             GUILayout.EndHorizontal();
-            
+
             GUILayout.Space(10);
         }
 
-        // ==================== HOST LOBBY ====================
         private void DrawHostLobby()
         {
             GUILayout.Label($"<b>Hosting: {_gameName}</b>", _headerStyle);
-            GUILayout.Label($"Port: {_port} | Waiting for players...");
-            
-            if (!string.IsNullOrEmpty(_status))
-            {
-                GUILayout.Label(_status);
-            }
-            
+
+            // Status
+            GUI.color = Color.green;
+            GUILayout.Label($"● Broadcasting on UDP port {BROADCAST_PORT}");
+            GUILayout.Label($"● {_connectedClients.Count} client(s) connected");
+            GUI.color = Color.white;
+
             GUILayout.Space(10);
-            
-            // Player slots
+
+            // Slots
             GUILayout.Label("<b>Player Slots</b>", _headerStyle);
-            
             _slotsScrollPos = GUILayout.BeginScrollView(_slotsScrollPos, GUILayout.Height(200));
             for (int i = 0; i < LobbyConfig.ActiveSlotCount; i++)
             {
-                DrawMultiplayerSlot(i, isHost: true);
+                DrawNetworkSlot(i, isHost: true);
             }
             GUILayout.EndScrollView();
-            
+
             GUILayout.Space(10);
-            
-            // Map settings (read-only display)
-            GUILayout.Label("<b>Map Settings</b>", _headerStyle);
-            GUILayout.Label($"Layout: {_layout} | FoW: {(_fogOfWar ? "On" : "Off")} | Size: {_mapHalfSize * 2}");
-            
+            GUILayout.Label($"<b>Map:</b> {_layout} | FoW: {(_fogOfWar ? "On" : "Off")} | Size: {_mapHalfSize * 2}");
+
             GUILayout.FlexibleSpace();
-            
-            // Action buttons
+
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Cancel", GUILayout.Height(36), GUILayout.Width(100)))
             {
-                StopHosting();
+                Cleanup();
                 _state = LobbyState.MainChoice;
             }
             GUILayout.FlexibleSpace();
-            
-            // Start game button (enabled when ready)
-            bool canStart = CountActivePlayers() >= 2;
-            GUI.enabled = canStart;
+
+            int humanCount = _networkSlots.Take(LobbyConfig.ActiveSlotCount).Count(s => s.Type == SlotType.Human);
+            GUI.enabled = humanCount >= 1; // At least host
             if (GUILayout.Button("Start Game", GUILayout.Height(36), GUILayout.Width(150)))
             {
                 StartMultiplayerGame();
             }
             GUI.enabled = true;
             GUILayout.EndHorizontal();
-            
+
             GUILayout.Space(10);
         }
 
-        // ==================== BROWSE GAMES ====================
         private void DrawBrowseGames()
         {
             GUILayout.Label("<b>Available Games</b>", _headerStyle);
+
+            if (_udpClient != null)
+            {
+                GUI.color = Color.green;
+                GUILayout.Label($"● Listening for broadcasts");
+                GUI.color = Color.white;
+            }
+
             GUILayout.Space(10);
-            
+
             if (_discoveredGames.Count == 0)
             {
                 GUILayout.Label("Searching for games...");
@@ -324,306 +902,258 @@ namespace TheWaningBorder.Menu
             else
             {
                 _gamesScrollPos = GUILayout.BeginScrollView(_gamesScrollPos, GUILayout.Height(300));
-                
                 foreach (var game in _discoveredGames)
                 {
                     GUILayout.BeginHorizontal(_gameListStyle);
                     GUILayout.Label($"{game.GameName} ({game.HostName})", GUILayout.Width(250));
-                    GUILayout.Label($"{game.CurrentPlayers}/{game.MaxPlayers} players", GUILayout.Width(100));
+                    GUILayout.Label(game.IPAddress, GUILayout.Width(120));
                     if (GUILayout.Button("Join", GUILayout.Width(80)))
                     {
-                        JoinGame(game);
+                        SendJoinRequest(game);
                     }
                     GUILayout.EndHorizontal();
                 }
-                
                 GUILayout.EndScrollView();
             }
-            
-            GUILayout.Space(10);
-            
-            // Player name
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Your Name:", GUILayout.Width(100));
-            _playerName = GUILayout.TextField(_playerName);
-            GUILayout.EndHorizontal();
-            
+
             GUILayout.FlexibleSpace();
-            
-            // Refresh and Back buttons
-            GUILayout.BeginHorizontal();
+
             if (GUILayout.Button("Back", GUILayout.Height(36), GUILayout.Width(100)))
             {
-                StopDiscovery();
+                Cleanup();
                 _state = LobbyState.MainChoice;
             }
-            GUILayout.FlexibleSpace();
-            if (GUILayout.Button("Refresh", GUILayout.Height(36), GUILayout.Width(100)))
-            {
-                RefreshDiscovery();
-            }
-            GUILayout.EndHorizontal();
-            
+
             GUILayout.Space(10);
         }
 
-        // ==================== CLIENT LOBBY ====================
         private void DrawClientLobby()
         {
-            GUILayout.Label("<b>Joined Lobby</b>", _headerStyle);
-            
+            GUILayout.Label("<b>Connected to Game</b>", _headerStyle);
+
+            GUI.color = Color.green;
+            GUILayout.Label($"● Connected to {_hostIP}");
+            GUILayout.Label($"● You are Player {_mySlotIndex + 1}");
+            GUI.color = Color.white;
+
             if (!string.IsNullOrEmpty(_status))
             {
                 GUILayout.Label(_status);
             }
-            
+
             GUILayout.Space(10);
-            
-            // Player slots (read-only for client)
+
             GUILayout.Label("<b>Player Slots</b>", _headerStyle);
-            
             _slotsScrollPos = GUILayout.BeginScrollView(_slotsScrollPos, GUILayout.Height(200));
             for (int i = 0; i < LobbyConfig.ActiveSlotCount; i++)
             {
-                DrawMultiplayerSlot(i, isHost: false);
+                DrawNetworkSlot(i, isHost: false);
             }
             GUILayout.EndScrollView();
-            
+
             GUILayout.FlexibleSpace();
-            
-            // Leave button
+
             if (GUILayout.Button("Leave", GUILayout.Height(36), GUILayout.Width(100)))
             {
-                LeaveLobby();
+                SendToHost($"{MSG_LEAVE}{_mySlotIndex}");
+                Cleanup();
                 _state = LobbyState.MainChoice;
             }
-            
+
             GUILayout.Space(10);
         }
 
-        // ==================== SLOT DRAWING ====================
-        private void DrawMultiplayerSlot(int index, bool isHost)
+        private void DrawConnecting()
         {
-            var slot = LobbyConfig.Slots[index];
-            
+            GUILayout.Label("<b>Connecting...</b>", _headerStyle);
+            GUILayout.Space(20);
+            GUILayout.Label(_status ?? "Please wait...");
+
+            GUILayout.FlexibleSpace();
+
+            if (GUILayout.Button("Cancel", GUILayout.Height(36), GUILayout.Width(100)))
+            {
+                Cleanup();
+                _state = LobbyState.BrowseGames;
+                StartClient();
+            }
+        }
+
+        private void DrawNetworkSlot(int index, bool isHost)
+        {
+            var slot = _networkSlots[index];
+            var faction = LobbyConfig.Slots[index].Faction;
+
             GUILayout.BeginHorizontal(_slotStyle);
-            
-            // Faction color indicator
+
+            // Faction color
             Color oldColor = GUI.color;
-            GUI.color = slot.GetFactionColor();
+            GUI.color = LobbyConfig.Slots[index].GetFactionColor();
             GUILayout.Label("■", GUILayout.Width(20));
             GUI.color = oldColor;
-            
+
             // Faction name
-            GUILayout.Label(slot.GetFactionName(), _factionLabelStyle, GUILayout.Width(60));
-            
+            GUILayout.Label(faction.ToString(), _factionLabelStyle, GUILayout.Width(60));
+
             // Slot content
             if (slot.Type == SlotType.Human)
             {
-                // Human player
                 string label = string.IsNullOrEmpty(slot.PlayerName) ? "Player" : slot.PlayerName;
-                GUILayout.Label(label, GUILayout.Width(150));
+                if (index == 0) label += " (Host)";
+                if (index == _mySlotIndex && !_isHost) label += " (You)";
+                
+                GUI.color = Color.cyan;
+                GUILayout.Label(label);
+                GUI.color = Color.white;
             }
             else if (slot.Type == SlotType.AI)
             {
                 if (isHost)
                 {
-                    // Host can change AI to Empty or adjust difficulty
                     if (GUILayout.Button("AI", GUILayout.Width(50)))
                     {
-                        // Cycle to Empty
                         slot.Type = SlotType.Empty;
                     }
-                    
-                    // Difficulty button
-                    string[] diffs = { "Easy", "Normal", "Hard", "Expert" };
-                    if (GUILayout.Button(diffs[(int)slot.AIDifficulty], GUILayout.Width(70)))
+                    string[] difficulties = { "Easy", "Normal", "Hard", "Expert" };
+                    if (GUILayout.Button(difficulties[(int)slot.AIDifficulty], GUILayout.Width(70)))
                     {
                         slot.AIDifficulty = (LobbyAIDifficulty)(((int)slot.AIDifficulty + 1) % 4);
                     }
                 }
                 else
                 {
-                    GUILayout.Label($"AI ({slot.AIDifficulty})", GUILayout.Width(120));
+                    GUILayout.Label($"AI ({slot.AIDifficulty})");
                 }
             }
-            else // Empty
+            else
             {
                 if (isHost)
                 {
-                    if (GUILayout.Button("[Open Slot]", GUILayout.Width(100)))
+                    if (GUILayout.Button("Empty", GUILayout.Width(50)))
                     {
-                        // Convert to AI
                         slot.Type = SlotType.AI;
-                        slot.AIDifficulty = LobbyAIDifficulty.Normal;
                     }
+                    GUILayout.Label("(Open)");
                 }
                 else
                 {
-                    GUILayout.Label("[Open Slot]", GUILayout.Width(100));
+                    GUILayout.Label("Empty");
                 }
             }
-            
+
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
         }
 
-        // ==================== MAP OPTIONS ====================
         private void DrawMapOptions()
         {
-            GUILayout.Label("<b>Spawn Layout</b>", _headerStyle);
+            GUILayout.Label("<b>Map Options</b>", _headerStyle);
+
             GUILayout.BeginHorizontal();
-            if (GUILayout.Toggle(_layout == SpawnLayout.Circle, " Circle", "Button")) 
+            GUILayout.Label("Layout:", GUILayout.Width(60));
+            if (GUILayout.Toggle(_layout == SpawnLayout.Circle, "Circle", "Button"))
                 _layout = SpawnLayout.Circle;
-            if (GUILayout.Toggle(_layout == SpawnLayout.TwoSides, " Two Sides", "Button")) 
+            if (GUILayout.Toggle(_layout == SpawnLayout.TwoSides, "Two Sides", "Button"))
                 _layout = SpawnLayout.TwoSides;
-            if (GUILayout.Toggle(_layout == SpawnLayout.TwoEachSide8, " 2 Each Side", "Button")) 
-                _layout = SpawnLayout.TwoEachSide8;
             GUILayout.EndHorizontal();
 
-            if (_layout == SpawnLayout.TwoSides)
-            {
-                GUILayout.BeginHorizontal();
-                if (GUILayout.Toggle(_twoSides == TwoSidesPreset.LeftRight,  "LR", "Button")) 
-                    _twoSides = TwoSidesPreset.LeftRight;
-                if (GUILayout.Toggle(_twoSides == TwoSidesPreset.UpDown, "UD", "Button")) 
-                    _twoSides = TwoSidesPreset.UpDown;
-                if (GUILayout.Toggle(_twoSides == TwoSidesPreset.LeftUp, "LU", "Button")) 
-                    _twoSides = TwoSidesPreset.LeftUp;
-                if (GUILayout.Toggle(_twoSides == TwoSidesPreset.LeftDown, "LD", "Button")) 
-                    _twoSides = TwoSidesPreset.LeftDown;
-                if (GUILayout.Toggle(_twoSides == TwoSidesPreset.RightUp, "RU", "Button")) 
-                    _twoSides = TwoSidesPreset.RightUp;
-                if (GUILayout.Toggle(_twoSides == TwoSidesPreset.RightDown, "RD", "Button")) 
-                    _twoSides = TwoSidesPreset.RightDown;
-                GUILayout.EndHorizontal();
-            }
-
-            GUILayout.Space(5);
-            
-            // FoW and Map Size
-            GUILayout.BeginHorizontal();
             _fogOfWar = GUILayout.Toggle(_fogOfWar, " Fog of War");
-            GUILayout.FlexibleSpace();
-            GUILayout.Label($"Map: {_mapHalfSize * 2}");
-            if (GUILayout.Button("-", GUILayout.Width(25))) 
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"Map Size: {_mapHalfSize * 2}", GUILayout.Width(120));
+            if (GUILayout.Button("-", GUILayout.Width(25)))
                 _mapHalfSize = Mathf.Max(64, _mapHalfSize - 16);
-            if (GUILayout.Button("+", GUILayout.Width(25))) 
+            if (GUILayout.Button("+", GUILayout.Width(25)))
                 _mapHalfSize = Mathf.Min(512, _mapHalfSize + 16);
             GUILayout.EndHorizontal();
         }
 
-        // ==================== HELPER METHODS ====================
-        private void SetPlayerCount(int count)
-        {
-            int newCount = Mathf.Clamp(count, 2, 8);
-            LobbyConfig.ActiveSlotCount = newCount;
-            LobbyConfig.SetupMultiplayer(newCount);
-        }
+        // ==================== ACTIONS ====================
 
-        private int CountActivePlayers()
-        {
-            int count = 0;
-            for (int i = 0; i < LobbyConfig.ActiveSlotCount; i++)
-            {
-                if (LobbyConfig.Slots[i].Type != SlotType.Empty)
-                    count++;
-            }
-            return count;
-        }
-
-        // ==================== NETWORK STUBS ====================
-        // Replace these with actual network implementation
-        
         private void CreateHostLobby()
         {
-            _status = $"Creating lobby on port {_port}...";
-            
-            // Set host as first human player
             LobbyConfig.Slots[0].Type = SlotType.Human;
             LobbyConfig.Slots[0].PlayerName = _playerName;
-            
+
             GameSettings.IsMultiplayer = true;
             GameSettings.NetworkRole = NetworkRole.Server;
             GameSettings.LocalPlayerFaction = Faction.Blue;
-            
-            // TODO: Start actual network hosting here
-            // Example: _networkDiscovery.StartBroadcasting(_gameName, _playerName, _port);
-            
+
+            StartHost();
             _state = LobbyState.HostLobby;
-            _status = "Waiting for players to join...";
         }
 
-        private void StopHosting()
+        private void SyncSlotsFromLobbyConfig()
         {
-            // TODO: Stop network hosting
-            GameSettings.ResetToSinglePlayer();
-        }
-
-        private void StartDiscovery()
-        {
-            _discoveredGames.Clear();
-            _discoveryTimer = 0f;
-            // TODO: Start actual network discovery
-            // Example: _networkDiscovery.StartDiscovery();
-        }
-
-        private void StopDiscovery()
-        {
-            // TODO: Stop network discovery
-        }
-
-        private void RefreshDiscovery()
-        {
-            _discoveredGames.Clear();
-            _discoveryTimer = 0f;
-            // TODO: Refresh discovery
-        }
-
-        private void JoinGame(DiscoveredGame game)
-        {
-            _status = $"Joining {game.GameName}...";
-            
-            GameSettings.IsMultiplayer = true;
-            GameSettings.NetworkRole = NetworkRole.Client;
-            
-            // TODO: Actually connect to the game
-            // The server will assign us a slot
-            
-            // For now, simulate joining
-            _state = LobbyState.ClientLobby;
-            _status = "Connected! Waiting for host to start...";
-        }
-
-        private void LeaveLobby()
-        {
-            // TODO: Disconnect from server
-            GameSettings.ResetToSinglePlayer();
+            for (int i = 0; i < 8; i++)
+            {
+                _networkSlots[i].Type = LobbyConfig.Slots[i].Type;
+                _networkSlots[i].PlayerName = LobbyConfig.Slots[i].PlayerName;
+                _networkSlots[i].AIDifficulty = LobbyConfig.Slots[i].AIDifficulty;
+                _networkSlots[i].ClientIP = "";
+            }
         }
 
         private void StartMultiplayerGame()
         {
-            // Apply all settings
+            // Notify all clients
+            foreach (var client in _connectedClients.Values)
+            {
+                try
+                {
+                    string msg = $"{MSG_START}{_port}";
+                    byte[] data = Encoding.UTF8.GetBytes(msg);
+                    _udpClient.Send(data, data.Length, client.EndPoint);
+                }
+                catch { }
+            }
+
+            ApplySettingsAndStart();
+        }
+
+        private void ApplySettingsAndStart()
+        {
+            // Apply settings
             GameSettings.FogOfWarEnabled = _fogOfWar;
             GameSettings.MapHalfSize = _mapHalfSize;
             GameSettings.SpawnLayout = _layout;
             GameSettings.TwoSides = _twoSides;
             GameSettings.SpawnSeed = _spawnSeed;
-            GameSettings.TotalPlayers = CountActivePlayers();
-            
+
+            // Sync network slots back to LobbyConfig
+            for (int i = 0; i < LobbyConfig.ActiveSlotCount; i++)
+            {
+                LobbyConfig.Slots[i].Type = _networkSlots[i].Type;
+                LobbyConfig.Slots[i].PlayerName = _networkSlots[i].PlayerName;
+                LobbyConfig.Slots[i].AIDifficulty = _networkSlots[i].AIDifficulty;
+            }
+
+            GameSettings.TotalPlayers = LobbyConfig.ActiveSlotCount;
             LobbyConfig.ApplyToGameSettings();
-            
-            // TODO: Send start signal to all clients
-            
-            // Load game scene
+
+            // Load scene
             int sceneIndex = FindSceneIndexByName(GameSceneName);
-            if (sceneIndex < 0)
+            if (sceneIndex >= 0)
+            {
+                SceneManager.LoadScene(sceneIndex);
+            }
+            else
             {
                 _error = $"Scene '{GameSceneName}' not found!";
-                return;
             }
+        }
+
+        private void SetPlayerCount(int count)
+        {
+            int newCount = Mathf.Clamp(count, 2, 8);
+            LobbyConfig.ActiveSlotCount = newCount;
+            LobbyConfig.SetupMultiplayer(newCount);
+            SyncSlotsFromLobbyConfig();
             
-            SceneManager.LoadScene(sceneIndex);
+            // Keep host in slot 0
+            _networkSlots[0].Type = SlotType.Human;
+            _networkSlots[0].PlayerName = _playerName;
+            _networkSlots[0].ClientIP = "HOST";
         }
 
         private static int FindSceneIndexByName(string name)
