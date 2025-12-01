@@ -70,8 +70,9 @@ namespace TheWaningBorder.Multiplayer
 
         // Debug
         [Header("Debug")]
-        public bool LogCommands = false;
-        public bool LogTicks = false;
+        public bool LogCommands = true;  // Enable by default for debugging
+        public bool LogTicks = true;     // Enable by default for debugging
+        public bool LogNetwork = true;   // New: log network activity
 
         void Awake()
         {
@@ -179,6 +180,13 @@ namespace TheWaningBorder.Multiplayer
 
             // Receive network messages
             ReceiveMessages();
+
+            // Auto-confirm current input tick (broadcast our commands for the upcoming tick)
+            int inputTick = _currentTick + INPUT_DELAY_TICKS;
+            if (_confirmedTicks.GetValueOrDefault(_localPlayerIndex, -1) < inputTick)
+            {
+                ConfirmTick(inputTick);
+            }
 
             // Accumulate time
             _tickAccumulator += Time.deltaTime;
@@ -392,6 +400,9 @@ namespace TheWaningBorder.Multiplayer
 
             string msgType = parts[0];
 
+            if (LogNetwork)
+                Debug.Log($"[Lockstep] Received {msgType} from {sender}");
+
             switch (msgType)
             {
                 case "TICK":
@@ -529,6 +540,8 @@ namespace TheWaningBorder.Multiplayer
                 try
                 {
                     _udpClient.Send(data, data.Length, player.EndPoint);
+                    if (LogNetwork)
+                        Debug.Log($"[Lockstep] Sent tick {tick} to player {player.PlayerIndex} at {player.EndPoint}");
                 }
                 catch (Exception e)
                 {

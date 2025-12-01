@@ -107,12 +107,15 @@ namespace TheWaningBorder.Multiplayer
             bootstrap.RemotePlayers.Clear();
             foreach (var client in clients)
             {
+                // Client's lockstep port = their lobby port + 1000
+                int clientLockstepPort = client.Port + 1000;
                 bootstrap.RemotePlayers.Add(new RemotePlayerInfo
                 {
                     IP = client.IP,
-                    Port = client.Port,
+                    Port = clientLockstepPort,
                     Faction = client.Faction // Use faction from ClientInfo
                 });
+                Debug.Log($"[LockstepBootstrap] Added remote player at {client.IP}:{clientLockstepPort} (lobby port was {client.Port})");
             }
 
             return bootstrap;

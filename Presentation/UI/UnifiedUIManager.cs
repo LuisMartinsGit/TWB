@@ -1,6 +1,7 @@
 // UnifiedUIManager.cs
 // Central manager for the unified UI system
 // Coordinates EntityInfoPanel and EntityActionPanel
+// FIXED: Uses GameSettings.LocalPlayerFaction instead of hardcoded Faction.Blue
 
 using UnityEngine;
 using Unity.Entities;
@@ -62,11 +63,11 @@ public class UnifiedUIManager : MonoBehaviour
             var e = sel[i];
             if (!manager.Exists(e)) continue;
             
-            // Only show UI for player-owned entities (Blue faction)
+            // Only show UI for player-owned entities (uses LocalPlayerFaction for multiplayer support)
             if (manager.HasComponent<FactionTag>(e))
             {
                 var faction = manager.GetComponentData<FactionTag>(e).Value;
-                if (faction == Faction.Blue)
+                if (faction == GameSettings.LocalPlayerFaction)  // FIXED: Was hardcoded to Faction.Blue
                     return e;
             }
         }

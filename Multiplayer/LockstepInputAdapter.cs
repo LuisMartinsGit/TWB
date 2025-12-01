@@ -17,13 +17,23 @@ namespace TheWaningBorder.Multiplayer
     public static class LockstepInputAdapter
     {
         /// <summary>
+        /// Check if lockstep is active and running
+        /// </summary>
+        private static bool IsLockstepActive()
+        {
+            return GameSettings.IsMultiplayer && 
+                   LockstepManager.Instance != null && 
+                   LockstepManager.Instance.IsSimulationRunning;
+        }
+
+        /// <summary>
         /// Issue a move command (replaces direct CommandGateway.IssueMove calls)
         /// </summary>
         public static void IssueMove(EntityManager em, Entity unit, float3 destination)
         {
-            if (!GameSettings.IsMultiplayer || LockstepManager.Instance == null)
+            if (!IsLockstepActive())
             {
-                // Single-player: execute immediately
+                // Single-player or lockstep not ready: execute immediately
                 CommandGateway.IssueMove(em, unit, destination);
                 return;
             }
@@ -32,7 +42,8 @@ namespace TheWaningBorder.Multiplayer
             int networkId = GetNetworkId(em, unit);
             if (networkId <= 0)
             {
-                Debug.LogWarning("[LockstepInput] Cannot issue move - entity has no network ID");
+                Debug.LogWarning("[LockstepInput] Cannot issue move - entity has no network ID, executing locally");
+                CommandGateway.IssueMove(em, unit, destination);
                 return;
             }
 
@@ -51,7 +62,7 @@ namespace TheWaningBorder.Multiplayer
         /// </summary>
         public static void IssueAttack(EntityManager em, Entity unit, Entity target)
         {
-            if (!GameSettings.IsMultiplayer || LockstepManager.Instance == null)
+            if (!IsLockstepActive())
             {
                 CommandGateway.IssueAttack(em, unit, target);
                 return;
@@ -61,7 +72,8 @@ namespace TheWaningBorder.Multiplayer
             int targetId = GetNetworkId(em, target);
             if (unitId <= 0 || targetId <= 0)
             {
-                Debug.LogWarning("[LockstepInput] Cannot issue attack - entity has no network ID");
+                Debug.LogWarning("[LockstepInput] Cannot issue attack - entity has no network ID, executing locally");
+                CommandGateway.IssueAttack(em, unit, target);
                 return;
             }
 
@@ -80,14 +92,18 @@ namespace TheWaningBorder.Multiplayer
         /// </summary>
         public static void IssueStop(EntityManager em, Entity unit)
         {
-            if (!GameSettings.IsMultiplayer || LockstepManager.Instance == null)
+            if (!IsLockstepActive())
             {
                 CommandGateway.IssueStop(em, unit);
                 return;
             }
 
             int networkId = GetNetworkId(em, unit);
-            if (networkId <= 0) return;
+            if (networkId <= 0)
+            {
+                CommandGateway.IssueStop(em, unit);
+                return;
+            }
 
             var cmd = new LockstepCommand
             {
@@ -103,7 +119,7 @@ namespace TheWaningBorder.Multiplayer
         /// </summary>
         public static void IssueGather(EntityManager em, Entity miner, Entity resourceNode, Entity depositLocation)
         {
-            if (!GameSettings.IsMultiplayer || LockstepManager.Instance == null)
+            if (!IsLockstepActive())
             {
                 CommandGateway.IssueGather(em, miner, resourceNode, depositLocation);
                 return;
@@ -112,7 +128,11 @@ namespace TheWaningBorder.Multiplayer
             int minerId = GetNetworkId(em, miner);
             int resourceId = GetNetworkId(em, resourceNode);
             int depositId = GetNetworkId(em, depositLocation);
-            if (minerId <= 0 || resourceId <= 0) return;
+            if (minerId <= 0 || resourceId <= 0)
+            {
+                CommandGateway.IssueGather(em, miner, resourceNode, depositLocation);
+                return;
+            }
 
             var cmd = new LockstepCommand
             {
@@ -130,7 +150,7 @@ namespace TheWaningBorder.Multiplayer
         /// </summary>
         public static void IssueBuild(EntityManager em, Entity builder, Entity targetBuilding, string buildingId, float3 position)
         {
-            if (!GameSettings.IsMultiplayer || LockstepManager.Instance == null)
+            if (!IsLockstepActive())
             {
                 CommandGateway.IssueBuild(em, builder, targetBuilding, buildingId, position);
                 return;
@@ -138,7 +158,11 @@ namespace TheWaningBorder.Multiplayer
 
             int builderId = GetNetworkId(em, builder);
             int targetBuildingId = GetNetworkId(em, targetBuilding);
-            if (builderId <= 0) return;
+            if (builderId <= 0)
+            {
+                CommandGateway.IssueBuild(em, builder, targetBuilding, buildingId, position);
+                return;
+            }
 
             var cmd = new LockstepCommand
             {
@@ -157,7 +181,7 @@ namespace TheWaningBorder.Multiplayer
         /// </summary>
         public static void IssueHeal(EntityManager em, Entity healer, Entity target)
         {
-            if (!GameSettings.IsMultiplayer || LockstepManager.Instance == null)
+            if (!IsLockstepActive())
             {
                 CommandGateway.IssueHeal(em, healer, target);
                 return;
@@ -165,12 +189,15 @@ namespace TheWaningBorder.Multiplayer
 
             int healerId = GetNetworkId(em, healer);
             int targetId = GetNetworkId(em, target);
-            if (healerId <= 0 || targetId <= 0) return;
+            if (healerId <= 0 || targetId <= 0)
+            {
+                CommandGateway.IssueHeal(em, healer, target);
+                return;
+            }
 
-            // Use attack command type for heal (same structure)
             var cmd = new LockstepCommand
             {
-                Type = LockstepCommandType.Attack, // Reuse for heal
+                Type = LockstepCommandType.Heal,
                 EntityNetworkId = healerId,
                 TargetEntityId = targetId
             };
@@ -183,7 +210,7 @@ namespace TheWaningBorder.Multiplayer
         /// </summary>
         public static void SetRallyPoint(EntityManager em, Entity building, float3 position)
         {
-            if (!GameSettings.IsMultiplayer || LockstepManager.Instance == null)
+            if (!IsLockstepActive())
             {
                 // Execute locally
                 if (!em.HasComponent<RallyPoint>(building))
@@ -193,7 +220,13 @@ namespace TheWaningBorder.Multiplayer
             }
 
             int buildingId = GetNetworkId(em, building);
-            if (buildingId <= 0) return;
+            if (buildingId <= 0)
+            {
+                if (!em.HasComponent<RallyPoint>(building))
+                    em.AddComponent<RallyPoint>(building);
+                em.SetComponentData(building, new RallyPoint { Position = position, Has = 1 });
+                return;
+            }
 
             var cmd = new LockstepCommand
             {
