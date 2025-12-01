@@ -13,15 +13,21 @@ namespace TheWaningBorder.Menu
 {
     /// <summary>
     /// Multiplayer lobby UI with full networking.
-    /// Handles hosting, joining, and lobby state synchronization.
     /// 
-    /// Network Protocol (all UDP on port 47777):
-    /// - TWB_GAME|GameName|HostName|GamePort         (Host broadcasts availability)
-    /// - TWB_JOIN|PlayerName                         (Client requests to join)
-    /// - TWB_LOBBY|SlotCount|Slot0Data|Slot1Data|... (Host broadcasts lobby state)
-    /// - TWB_ACCEPT|SlotIndex                        (Host accepts join)
-    /// - TWB_LEAVE|SlotIndex                         (Client leaves)
-    /// - TWB_START|Port                              (Host signals game start)
+    /// Architecture:
+    /// - Host listens on BROADCAST_PORT (47777) for broadcasts AND join requests
+    /// - Client uses TWO sockets:
+    ///   1. Broadcast listener on 47777 (with ReuseAddress) to discover games
+    ///   2. Private socket on random port for receiving direct messages (ACCEPT, LOBBY, START)
+    /// - Client includes its private port in JOIN message so host knows where to respond
+    /// 
+    /// Protocol:
+    /// - TWB_GAME|GameName|HostName|GamePort         (Host → Broadcast, advertising game)
+    /// - TWB_JOIN|PlayerName|ClientPort              (Client → Host, request to join)
+    /// - TWB_ACCEPT|SlotIndex                        (Host → Client's private port)
+    /// - TWB_LOBBY|SlotCount|Slot0|Slot1|...         (Host → Client's private port)
+    /// - TWB_LEAVE|SlotIndex                         (Client → Host)
+    /// - TWB_START|Port                              (Host → Client's private port)
     /// </summary>
     public class MultiplayerLobbyUI : MonoBehaviour
     {
@@ -40,6 +46,7 @@ namespace TheWaningBorder.Menu
         private const string MSG_LEAVE = "TWB_LEAVE|";
         private const string MSG_START = "TWB_START|";
         private const string MSG_ACCEPT = "TWB_ACCEPT|";
+        private const string MSG_DISCOVER = "TWB_DISCOVER|"; // Client asks for game info
 
         // Lobby state machine
         private enum LobbyState
@@ -70,8 +77,12 @@ namespace TheWaningBorder.Menu
         private bool _fogOfWar = GameSettings.FogOfWarEnabled;
         private int _mapHalfSize = GameSettings.MapHalfSize;
 
-        // Network state
-        private UdpClient _udpClient;
+        // Network state - Host uses single socket, Client uses two
+        private UdpClient _hostSocket;           // Host: listens on 47777
+        private UdpClient _broadcastListener;    // Client: listens on 47777 for game discovery
+        private UdpClient _clientSocket;         // Client: random port for direct messages
+        private int _clientPort;                 // Client's private port
+        
         private bool _isHost;
         private bool _isConnected;
         private float _lastBroadcastTime;
@@ -79,7 +90,7 @@ namespace TheWaningBorder.Menu
         private string _hostIP;
         private int _mySlotIndex = -1;
         
-        // Client tracking (host only)
+        // Client tracking (host only) - now includes client's port
         private Dictionary<string, ClientInfo> _connectedClients = new Dictionary<string, ClientInfo>();
         
         // Discovery
@@ -114,7 +125,8 @@ namespace TheWaningBorder.Menu
         {
             public string PlayerName;
             public int SlotIndex;
-            public IPEndPoint EndPoint;
+            public string IP;
+            public int Port;  // Client's private port for direct messages
             public DateTime LastSeen;
         }
 
@@ -123,15 +135,13 @@ namespace TheWaningBorder.Menu
             public SlotType Type = SlotType.Empty;
             public string PlayerName = "";
             public LobbyAIDifficulty AIDifficulty = LobbyAIDifficulty.Normal;
-            public string ClientIP = ""; // For tracking which client owns this slot
+            public string ClientKey = ""; // "IP:Port" for tracking
         }
 
         void Awake()
         {
-            // Keep running when window loses focus (essential for multiplayer testing)
             Application.runInBackground = true;
             
-            // Initialize network slots
             for (int i = 0; i < 8; i++)
             {
                 _networkSlots[i] = new NetworkSlot();
@@ -160,86 +170,111 @@ namespace TheWaningBorder.Menu
 
         private void Cleanup()
         {
-            if (_udpClient != null)
+            // Send leave message if connected as client
+            if (!_isHost && _isConnected && _mySlotIndex >= 0 && _clientSocket != null)
             {
-                // If we're a client, send leave message
-                if (!_isHost && _isConnected && _mySlotIndex >= 0)
+                try
                 {
-                    SendToHost($"{MSG_LEAVE}{_mySlotIndex}");
+                    string msg = $"{MSG_LEAVE}{_mySlotIndex}";
+                    byte[] data = Encoding.UTF8.GetBytes(msg);
+                    _clientSocket.Send(data, data.Length, _hostIP, BROADCAST_PORT);
                 }
-                
-                try { _udpClient.Close(); } catch { }
-                _udpClient = null;
+                catch { }
             }
+
+            if (_hostSocket != null)
+            {
+                try { _hostSocket.Close(); } catch { }
+                _hostSocket = null;
+            }
+            if (_broadcastListener != null)
+            {
+                try { _broadcastListener.Close(); } catch { }
+                _broadcastListener = null;
+            }
+            if (_clientSocket != null)
+            {
+                try { _clientSocket.Close(); } catch { }
+                _clientSocket = null;
+            }
+            
             _isHost = false;
             _isConnected = false;
             _connectedClients.Clear();
+            _discoveredGames.Clear();
         }
 
         void Update()
         {
-            if (_udpClient == null) return;
-
-            // Receive messages
-            ReceiveMessages();
-
             if (_isHost)
             {
-                // Host: broadcast game availability
+                // Host: receive on main socket
+                ReceiveOnSocket(_hostSocket, true);
+
+                // Broadcast game availability
                 if (Time.time - _lastBroadcastTime >= BROADCAST_INTERVAL)
                 {
                     BroadcastGameAvailability();
                     _lastBroadcastTime = Time.time;
                 }
 
-                // Host: broadcast lobby state to connected clients
+                // Send lobby state to all clients
                 if (Time.time - _lastLobbySyncTime >= LOBBY_SYNC_INTERVAL)
                 {
                     BroadcastLobbyState();
                     _lastLobbySyncTime = Time.time;
                 }
 
-                // Cleanup disconnected clients
                 CleanupDisconnectedClients();
             }
-            else if (_isConnected || _state == LobbyState.Connecting)
+            else if (_clientSocket != null)
             {
-                // Client: send heartbeat (re-send join request) to keep connection alive
-                if (Time.time - _lastBroadcastTime >= BROADCAST_INTERVAL)
-                {
-                    SendHeartbeat();
-                    _lastBroadcastTime = Time.time;
-                }
-            }
+                // Client: receive all messages on single socket
+                ReceiveOnSocket(_clientSocket, false);
 
-            // Discovery: cleanup stale games
-            if (_state == LobbyState.BrowseGames)
-            {
-                _discoveredGames.RemoveAll(g => 
-                    (DateTime.Now - g.LastSeen).TotalSeconds > DISCOVERY_TIMEOUT);
+                // Discovery mode: send discovery broadcasts to find games
+                if (_state == LobbyState.BrowseGames)
+                {
+                    if (Time.time - _lastBroadcastTime >= BROADCAST_INTERVAL)
+                    {
+                        SendDiscoveryBroadcast();
+                        _lastBroadcastTime = Time.time;
+                    }
+                    
+                    // Cleanup stale games
+                    _discoveredGames.RemoveAll(g => 
+                        (DateTime.Now - g.LastSeen).TotalSeconds > DISCOVERY_TIMEOUT);
+                }
+                // Connected/Connecting: send heartbeat
+                else if (_isConnected || _state == LobbyState.Connecting)
+                {
+                    if (Time.time - _lastBroadcastTime >= BROADCAST_INTERVAL)
+                    {
+                        SendHeartbeat();
+                        _lastBroadcastTime = Time.time;
+                    }
+                }
             }
         }
 
-        private void SendHeartbeat()
+        private void SendDiscoveryBroadcast()
         {
-            // Re-send join request as heartbeat - host will recognize us and update LastSeen
-            if (!string.IsNullOrEmpty(_hostIP))
+            if (_clientSocket == null) return;
+
+            try
             {
-                try
-                {
-                    string message = $"{MSG_JOIN}{_playerName}";
-                    byte[] data = Encoding.UTF8.GetBytes(message);
-                    IPEndPoint hostEP = new IPEndPoint(IPAddress.Parse(_hostIP), BROADCAST_PORT);
-                    _udpClient.Send(data, data.Length, hostEP);
-                }
-                catch (Exception e)
-                {
-                    Debug.LogError($"[MultiplayerLobbyUI] Heartbeat failed: {e.Message}");
-                }
+                // Send discovery request to broadcast address
+                string message = $"{MSG_DISCOVER}{_clientPort}";
+                byte[] data = Encoding.UTF8.GetBytes(message);
+                _clientSocket.Send(data, data.Length, new IPEndPoint(IPAddress.Broadcast, BROADCAST_PORT));
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[MultiplayerLobbyUI] Discovery broadcast failed: {e.Message}");
             }
         }
 
-        // ==================== NETWORK - CORE ====================
+        // ==================== NETWORK - SETUP ====================
 
         private void StartHost()
         {
@@ -247,23 +282,19 @@ namespace TheWaningBorder.Menu
 
             try
             {
-                // Use SO_REUSEADDR to allow host and client on same machine (for testing)
-                _udpClient = new UdpClient();
-                _udpClient.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-                _udpClient.Client.Bind(new IPEndPoint(IPAddress.Any, BROADCAST_PORT));
-                _udpClient.EnableBroadcast = true;
-                _udpClient.Client.ReceiveTimeout = 10;
+                _hostSocket = new UdpClient(BROADCAST_PORT);
+                _hostSocket.EnableBroadcast = true;
+                _hostSocket.Client.ReceiveTimeout = 10;
+                
                 _isHost = true;
                 _isConnected = true;
                 _mySlotIndex = 0;
 
-                // Initialize slots from LobbyConfig
                 SyncSlotsFromLobbyConfig();
                 
-                // Set slot 0 as host
                 _networkSlots[0].Type = SlotType.Human;
                 _networkSlots[0].PlayerName = _playerName;
-                _networkSlots[0].ClientIP = "HOST";
+                _networkSlots[0].ClientKey = "HOST";
 
                 Debug.Log($"[MultiplayerLobbyUI] Host started on UDP port {BROADCAST_PORT}");
             }
@@ -280,17 +311,18 @@ namespace TheWaningBorder.Menu
 
             try
             {
-                // Client must listen on BROADCAST_PORT to receive game announcements
-                // Use SO_REUSEADDR to allow multiple clients on same machine (for testing)
-                _udpClient = new UdpClient();
-                _udpClient.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-                _udpClient.Client.Bind(new IPEndPoint(IPAddress.Any, BROADCAST_PORT));
-                _udpClient.EnableBroadcast = true;
-                _udpClient.Client.ReceiveTimeout = 10;
+                // Client only needs ONE socket on a random port
+                // It can still receive broadcasts (UDP broadcasts reach all sockets)
+                // AND receive direct messages from host
+                _clientSocket = new UdpClient(0); // 0 = any available port
+                _clientSocket.EnableBroadcast = true;
+                _clientSocket.Client.ReceiveTimeout = 10;
+                _clientPort = ((IPEndPoint)_clientSocket.Client.LocalEndPoint).Port;
+
                 _isHost = false;
                 _isConnected = false;
 
-                Debug.Log($"[MultiplayerLobbyUI] Client started, listening on UDP port {BROADCAST_PORT}");
+                Debug.Log($"[MultiplayerLobbyUI] Client started on port {_clientPort}");
             }
             catch (Exception e)
             {
@@ -299,101 +331,109 @@ namespace TheWaningBorder.Menu
             }
         }
 
-        private void ReceiveMessages()
+        // ==================== NETWORK - RECEIVE ====================
+
+        private void ReceiveOnSocket(UdpClient socket, bool isHostSocket)
         {
-            if (_udpClient == null) return;
+            if (socket == null) return;
 
             try
             {
-                while (_udpClient.Available > 0)
+                while (socket.Available > 0)
                 {
                     IPEndPoint remoteEP = new IPEndPoint(IPAddress.Any, 0);
-                    byte[] data = _udpClient.Receive(ref remoteEP);
+                    byte[] data = socket.Receive(ref remoteEP);
                     string message = Encoding.UTF8.GetString(data);
                     
-                    ProcessMessage(message, remoteEP);
+                    ProcessMessage(message, remoteEP, isHostSocket);
                 }
             }
-            catch (SocketException)
-            {
-                // Timeout - normal
-            }
+            catch (SocketException) { }
             catch (Exception e)
             {
                 Debug.LogError($"[MultiplayerLobbyUI] Receive error: {e.Message}");
             }
         }
 
-        private void ProcessMessage(string message, IPEndPoint sender)
+        private void ProcessMessage(string message, IPEndPoint sender, bool isHostSocket)
         {
             string senderIP = sender.Address.ToString();
+            int senderPort = sender.Port;
 
-            // Debug: log all received messages
-            Debug.Log($"[MultiplayerLobbyUI] Received from {senderIP}: {message.Substring(0, Math.Min(50, message.Length))}...");
+            Debug.Log($"[MultiplayerLobbyUI] Received from {senderIP}:{senderPort}: {message.Substring(0, Math.Min(50, message.Length))}...");
 
             if (message.StartsWith(MSG_GAME))
             {
-                // Game broadcast (client receives this)
                 if (!_isHost)
-                {
                     ProcessGameBroadcast(message, senderIP);
-                }
+            }
+            else if (message.StartsWith(MSG_DISCOVER))
+            {
+                // Host responds to discovery requests
+                if (_isHost)
+                    ProcessDiscoveryRequest(message, senderIP);
             }
             else if (message.StartsWith(MSG_JOIN))
             {
-                // Join request (host receives this)
                 if (_isHost)
-                {
-                    ProcessJoinRequest(message, sender);
-                }
+                    ProcessJoinRequest(message, senderIP, senderPort);
             }
             else if (message.StartsWith(MSG_LOBBY))
             {
-                // Lobby state update (client receives this)
-                // Process even if not yet "connected" - we might be waiting for accept
                 if (!_isHost)
-                {
                     ProcessLobbyUpdate(message);
-                }
             }
             else if (message.StartsWith(MSG_ACCEPT))
             {
-                // Join accepted (client receives this)
                 if (!_isHost)
-                {
                     ProcessJoinAccepted(message, senderIP);
-                }
             }
             else if (message.StartsWith(MSG_LEAVE))
             {
-                // Player leaving (host receives this)
                 if (_isHost)
-                {
-                    ProcessLeaveRequest(message, senderIP);
-                }
+                    ProcessLeaveRequest(message, senderIP, senderPort);
             }
             else if (message.StartsWith(MSG_START))
             {
-                // Game starting (client receives this)
                 if (!_isHost)
-                {
                     ProcessGameStart(message);
-                }
             }
         }
 
-        // ==================== HOST NETWORK LOGIC ====================
+        private void ProcessDiscoveryRequest(string message, string senderIP)
+        {
+            // Format: TWB_DISCOVER|ClientPort
+            string[] parts = message.Split('|');
+            if (parts.Length < 2) return;
+
+            if (!int.TryParse(parts[1], out int clientPort)) return;
+
+            // Send game info directly to the client's port
+            try
+            {
+                string response = $"{MSG_GAME}{_gameName}|{_playerName}|{_port}";
+                byte[] data = Encoding.UTF8.GetBytes(response);
+                _hostSocket.Send(data, data.Length, senderIP, clientPort);
+                
+                Debug.Log($"[MultiplayerLobbyUI] Sent game info to {senderIP}:{clientPort}");
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[MultiplayerLobbyUI] Failed to respond to discovery: {e.Message}");
+            }
+        }
+
+        // ==================== HOST LOGIC ====================
 
         private void BroadcastGameAvailability()
         {
-            if (_udpClient == null) return;
+            if (_hostSocket == null) return;
 
             try
             {
                 string message = $"{MSG_GAME}{_gameName}|{_playerName}|{_port}";
                 byte[] data = Encoding.UTF8.GetBytes(message);
-                IPEndPoint broadcast = new IPEndPoint(IPAddress.Broadcast, BROADCAST_PORT);
-                _udpClient.Send(data, data.Length, broadcast);
+                _hostSocket.Send(data, data.Length, new IPEndPoint(IPAddress.Broadcast, BROADCAST_PORT));
             }
             catch (Exception e)
             {
@@ -403,10 +443,8 @@ namespace TheWaningBorder.Menu
 
         private void BroadcastLobbyState()
         {
-            if (_udpClient == null) return;
+            if (_hostSocket == null) return;
 
-            // Build lobby state message
-            // Format: TWB_LOBBY|SlotCount|Type,Name,Difficulty|Type,Name,Difficulty|...
             var sb = new StringBuilder();
             sb.Append(MSG_LOBBY);
             sb.Append(LobbyConfig.ActiveSlotCount);
@@ -420,55 +458,54 @@ namespace TheWaningBorder.Menu
             string message = sb.ToString();
             byte[] data = Encoding.UTF8.GetBytes(message);
 
-            // Send to all connected clients
+            // Send to each client's PRIVATE port
             foreach (var client in _connectedClients.Values)
             {
                 try
                 {
-                    _udpClient.Send(data, data.Length, client.EndPoint);
+                    _hostSocket.Send(data, data.Length, client.IP, client.Port);
                 }
                 catch (Exception e)
                 {
-                    Debug.LogError($"[MultiplayerLobbyUI] Failed to send to {client.EndPoint}: {e.Message}");
+                    Debug.LogError($"[MultiplayerLobbyUI] Failed to send lobby to {client.IP}:{client.Port}: {e.Message}");
                 }
             }
         }
 
-        private void ProcessJoinRequest(string message, IPEndPoint sender)
+        private void ProcessJoinRequest(string message, string senderIP, int senderPort)
         {
-            // Format: TWB_JOIN|PlayerName
+            // Format: TWB_JOIN|PlayerName|ClientPort
             string[] parts = message.Split('|');
-            if (parts.Length < 2) return;
+            if (parts.Length < 3) return;
 
             string playerName = parts[1];
-            string senderIP = sender.Address.ToString();
+            if (!int.TryParse(parts[2], out int clientPrivatePort)) return;
 
-            // Check if this client already has a slot (reconnect or heartbeat)
-            if (_connectedClients.TryGetValue(senderIP, out var existingClient))
+            string clientKey = $"{senderIP}:{clientPrivatePort}";
+
+            Debug.Log($"[MultiplayerLobbyUI] JOIN from {playerName} at {senderIP}, private port {clientPrivatePort}");
+
+            // Check if already connected
+            if (_connectedClients.TryGetValue(clientKey, out var existingClient))
             {
-                // Update last seen time
                 existingClient.LastSeen = DateTime.Now;
-                existingClient.EndPoint = sender; // Update endpoint in case port changed
                 
-                // Re-send acceptance in case they missed it
+                // Re-send accept
                 string acceptMsg = $"{MSG_ACCEPT}{existingClient.SlotIndex}";
-                byte[] data = Encoding.UTF8.GetBytes(acceptMsg);
-                _udpClient.Send(data, data.Length, sender);
+                byte[] acceptData = Encoding.UTF8.GetBytes(acceptMsg);
+                _hostSocket.Send(acceptData, acceptData.Length, senderIP, clientPrivatePort);
                 
                 Debug.Log($"[MultiplayerLobbyUI] Re-confirmed {playerName} in slot {existingClient.SlotIndex}");
                 return;
             }
 
-            Debug.Log($"[MultiplayerLobbyUI] New join request from {playerName} at {senderIP}");
-
-            // Find an empty or AI slot for this player
+            // Find available slot
             int assignedSlot = -1;
-            for (int i = 1; i < LobbyConfig.ActiveSlotCount; i++) // Start from 1, slot 0 is host
+            for (int i = 1; i < LobbyConfig.ActiveSlotCount; i++)
             {
                 if (_networkSlots[i].Type == SlotType.Empty || _networkSlots[i].Type == SlotType.AI)
                 {
-                    // Check if not already taken by another client
-                    if (string.IsNullOrEmpty(_networkSlots[i].ClientIP) || _networkSlots[i].Type == SlotType.AI)
+                    if (string.IsNullOrEmpty(_networkSlots[i].ClientKey) || _networkSlots[i].Type == SlotType.AI)
                     {
                         assignedSlot = i;
                         break;
@@ -478,56 +515,52 @@ namespace TheWaningBorder.Menu
 
             if (assignedSlot >= 0)
             {
-                // Assign player to slot
                 _networkSlots[assignedSlot].Type = SlotType.Human;
                 _networkSlots[assignedSlot].PlayerName = playerName;
-                _networkSlots[assignedSlot].ClientIP = senderIP;
+                _networkSlots[assignedSlot].ClientKey = clientKey;
 
-                // Track client
-                _connectedClients[senderIP] = new ClientInfo
+                _connectedClients[clientKey] = new ClientInfo
                 {
                     PlayerName = playerName,
                     SlotIndex = assignedSlot,
-                    EndPoint = sender,
+                    IP = senderIP,
+                    Port = clientPrivatePort,
                     LastSeen = DateTime.Now
                 };
 
-                // Send acceptance with slot assignment
+                // Send accept to client's PRIVATE port
                 string acceptMsg = $"{MSG_ACCEPT}{assignedSlot}";
                 byte[] data = Encoding.UTF8.GetBytes(acceptMsg);
-                _udpClient.Send(data, data.Length, sender);
+                _hostSocket.Send(data, data.Length, senderIP, clientPrivatePort);
 
-                Debug.Log($"[MultiplayerLobbyUI] Assigned {playerName} to slot {assignedSlot}");
+                Debug.Log($"[MultiplayerLobbyUI] Assigned {playerName} to slot {assignedSlot}, sending to port {clientPrivatePort}");
                 
-                // Immediately broadcast updated lobby state
                 BroadcastLobbyState();
             }
             else
             {
                 Debug.Log($"[MultiplayerLobbyUI] No slots available for {playerName}");
-                // TODO: Send rejection message
             }
         }
 
-        private void ProcessLeaveRequest(string message, string senderIP)
+        private void ProcessLeaveRequest(string message, string senderIP, int senderPort)
         {
-            // Format: TWB_LEAVE|SlotIndex
             string[] parts = message.Split('|');
             if (parts.Length < 2) return;
 
             if (int.TryParse(parts[1], out int slotIndex) && slotIndex >= 0 && slotIndex < 8)
             {
-                // Verify this client owns this slot
-                if (_networkSlots[slotIndex].ClientIP == senderIP)
+                // Find and remove client
+                var clientToRemove = _connectedClients.FirstOrDefault(c => c.Value.SlotIndex == slotIndex);
+                if (!string.IsNullOrEmpty(clientToRemove.Key))
                 {
                     Debug.Log($"[MultiplayerLobbyUI] Player left slot {slotIndex}");
                     
                     _networkSlots[slotIndex].Type = SlotType.AI;
                     _networkSlots[slotIndex].PlayerName = "";
-                    _networkSlots[slotIndex].ClientIP = "";
+                    _networkSlots[slotIndex].ClientKey = "";
                     
-                    _connectedClients.Remove(senderIP);
-                    
+                    _connectedClients.Remove(clientToRemove.Key);
                     BroadcastLobbyState();
                 }
             }
@@ -540,28 +573,26 @@ namespace TheWaningBorder.Menu
                 .Select(kvp => kvp.Key)
                 .ToList();
 
-            foreach (var ip in staleClients)
+            foreach (var key in staleClients)
             {
-                var client = _connectedClients[ip];
+                var client = _connectedClients[key];
                 Debug.Log($"[MultiplayerLobbyUI] Client {client.PlayerName} timed out");
                 
-                // Free up their slot
                 if (client.SlotIndex >= 0 && client.SlotIndex < 8)
                 {
                     _networkSlots[client.SlotIndex].Type = SlotType.AI;
                     _networkSlots[client.SlotIndex].PlayerName = "";
-                    _networkSlots[client.SlotIndex].ClientIP = "";
+                    _networkSlots[client.SlotIndex].ClientKey = "";
                 }
                 
-                _connectedClients.Remove(ip);
+                _connectedClients.Remove(key);
             }
         }
 
-        // ==================== CLIENT NETWORK LOGIC ====================
+        // ==================== CLIENT LOGIC ====================
 
         private void ProcessGameBroadcast(string message, string senderIP)
         {
-            // Format: TWB_GAME|GameName|HostName|Port
             string[] parts = message.Split('|');
             if (parts.Length < 4) return;
 
@@ -569,7 +600,6 @@ namespace TheWaningBorder.Menu
             string hostName = parts[2];
             if (!ushort.TryParse(parts[3], out ushort port)) return;
 
-            // Update or add discovered game
             var existing = _discoveredGames.Find(g => g.IPAddress == senderIP);
             if (existing != null)
             {
@@ -594,7 +624,7 @@ namespace TheWaningBorder.Menu
 
         private void SendJoinRequest(DiscoveredGame game)
         {
-            if (_udpClient == null) return;
+            if (_clientSocket == null) return;
 
             _hostIP = game.IPAddress;
             _status = $"Joining {game.GameName}...";
@@ -602,12 +632,12 @@ namespace TheWaningBorder.Menu
 
             try
             {
-                string message = $"{MSG_JOIN}{_playerName}";
+                // Include our private port so host knows where to send responses
+                string message = $"{MSG_JOIN}{_playerName}|{_clientPort}";
                 byte[] data = Encoding.UTF8.GetBytes(message);
-                IPEndPoint hostEP = new IPEndPoint(IPAddress.Parse(game.IPAddress), BROADCAST_PORT);
-                _udpClient.Send(data, data.Length, hostEP);
+                _clientSocket.Send(data, data.Length, game.IPAddress, BROADCAST_PORT);
                 
-                Debug.Log($"[MultiplayerLobbyUI] Sent join request to {game.IPAddress}");
+                Debug.Log($"[MultiplayerLobbyUI] Sent JOIN to {game.IPAddress}:{BROADCAST_PORT}, my private port is {_clientPort}");
             }
             catch (Exception e)
             {
@@ -617,27 +647,45 @@ namespace TheWaningBorder.Menu
             }
         }
 
+        private void SendHeartbeat()
+        {
+            if (_clientSocket == null || string.IsNullOrEmpty(_hostIP)) return;
+
+            try
+            {
+                string message = $"{MSG_JOIN}{_playerName}|{_clientPort}";
+                byte[] data = Encoding.UTF8.GetBytes(message);
+                _clientSocket.Send(data, data.Length, _hostIP, BROADCAST_PORT);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[MultiplayerLobbyUI] Heartbeat failed: {e.Message}");
+            }
+        }
+
         private void ProcessJoinAccepted(string message, string senderIP)
         {
-            // Format: TWB_ACCEPT|SlotIndex
             string[] parts = message.Split('|');
             if (parts.Length < 2) return;
 
             if (int.TryParse(parts[1], out int slotIndex))
             {
                 _mySlotIndex = slotIndex;
-                _hostIP = senderIP; // Store host IP for future communication
+                _hostIP = senderIP;
                 _isConnected = true;
                 _state = LobbyState.ClientLobby;
                 _status = $"Connected! You are in slot {slotIndex + 1}";
                 
-                Debug.Log($"[MultiplayerLobbyUI] Join accepted from {senderIP}, assigned to slot {slotIndex}");
+                // Set multiplayer settings for client
+                GameSettings.IsMultiplayer = true;
+                GameSettings.NetworkRole = NetworkRole.Client;
+                
+                Debug.Log($"[MultiplayerLobbyUI] Join accepted, assigned to slot {slotIndex}");
             }
         }
 
         private void ProcessLobbyUpdate(string message)
         {
-            // Format: TWB_LOBBY|SlotCount|Type,Name,Difficulty|...
             string[] parts = message.Split('|');
             if (parts.Length < 2) return;
 
@@ -663,26 +711,22 @@ namespace TheWaningBorder.Menu
 
         private void ProcessGameStart(string message)
         {
-            Debug.Log("[MultiplayerLobbyUI] Game starting!");
+            // Format: TWB_START|Port|FactionIndex
+            string[] parts = message.Split('|');
             
-            // Apply settings and load scene
+            if (parts.Length >= 3 && int.TryParse(parts[2], out int factionIndex))
+            {
+                GameSettings.LocalPlayerFaction = (Faction)factionIndex;
+                Debug.Log($"[MultiplayerLobbyUI] Game starting! My faction: {GameSettings.LocalPlayerFaction}");
+            }
+            else
+            {
+                // Fallback: use slot index to determine faction
+                GameSettings.LocalPlayerFaction = LobbyConfig.Slots[_mySlotIndex].Faction;
+                Debug.Log($"[MultiplayerLobbyUI] Game starting! Faction from slot {_mySlotIndex}: {GameSettings.LocalPlayerFaction}");
+            }
+            
             ApplySettingsAndStart();
-        }
-
-        private void SendToHost(string message)
-        {
-            if (_udpClient == null || string.IsNullOrEmpty(_hostIP)) return;
-
-            try
-            {
-                byte[] data = Encoding.UTF8.GetBytes(message);
-                IPEndPoint hostEP = new IPEndPoint(IPAddress.Parse(_hostIP), BROADCAST_PORT);
-                _udpClient.Send(data, data.Length, hostEP);
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"[MultiplayerLobbyUI] Failed to send to host: {e.Message}");
-            }
         }
 
         // ==================== GUI ====================
@@ -733,24 +777,12 @@ namespace TheWaningBorder.Menu
 
             switch (_state)
             {
-                case LobbyState.MainChoice:
-                    DrawMainChoice();
-                    break;
-                case LobbyState.HostSetup:
-                    DrawHostSetup();
-                    break;
-                case LobbyState.HostLobby:
-                    DrawHostLobby();
-                    break;
-                case LobbyState.BrowseGames:
-                    DrawBrowseGames();
-                    break;
-                case LobbyState.ClientLobby:
-                    DrawClientLobby();
-                    break;
-                case LobbyState.Connecting:
-                    DrawConnecting();
-                    break;
+                case LobbyState.MainChoice: DrawMainChoice(); break;
+                case LobbyState.HostSetup: DrawHostSetup(); break;
+                case LobbyState.HostLobby: DrawHostLobby(); break;
+                case LobbyState.BrowseGames: DrawBrowseGames(); break;
+                case LobbyState.ClientLobby: DrawClientLobby(); break;
+                case LobbyState.Connecting: DrawConnecting(); break;
             }
 
             GUI.DragWindow(new Rect(0, 0, 10000, 25));
@@ -762,9 +794,7 @@ namespace TheWaningBorder.Menu
             GUILayout.Space(20);
 
             if (GUILayout.Button("Host Game", GUILayout.Height(50)))
-            {
                 _state = LobbyState.HostSetup;
-            }
 
             GUILayout.Space(10);
 
@@ -777,9 +807,7 @@ namespace TheWaningBorder.Menu
             GUILayout.FlexibleSpace();
 
             if (GUILayout.Button("Back", GUILayout.Height(40)))
-            {
                 OnBackPressed?.Invoke();
-            }
 
             GUILayout.Space(10);
         }
@@ -823,14 +851,10 @@ namespace TheWaningBorder.Menu
 
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Back", GUILayout.Height(36), GUILayout.Width(100)))
-            {
                 _state = LobbyState.MainChoice;
-            }
             GUILayout.FlexibleSpace();
             if (GUILayout.Button("Create Lobby", GUILayout.Height(36), GUILayout.Width(150)))
-            {
                 CreateHostLobby();
-            }
             GUILayout.EndHorizontal();
 
             GUILayout.Space(10);
@@ -840,7 +864,6 @@ namespace TheWaningBorder.Menu
         {
             GUILayout.Label($"<b>Hosting: {_gameName}</b>", _headerStyle);
 
-            // Status
             GUI.color = Color.green;
             GUILayout.Label($"● Broadcasting on UDP port {BROADCAST_PORT}");
             GUILayout.Label($"● {_connectedClients.Count} client(s) connected");
@@ -848,13 +871,10 @@ namespace TheWaningBorder.Menu
 
             GUILayout.Space(10);
 
-            // Slots
             GUILayout.Label("<b>Player Slots</b>", _headerStyle);
             _slotsScrollPos = GUILayout.BeginScrollView(_slotsScrollPos, GUILayout.Height(200));
             for (int i = 0; i < LobbyConfig.ActiveSlotCount; i++)
-            {
                 DrawNetworkSlot(i, isHost: true);
-            }
             GUILayout.EndScrollView();
 
             GUILayout.Space(10);
@@ -871,11 +891,9 @@ namespace TheWaningBorder.Menu
             GUILayout.FlexibleSpace();
 
             int humanCount = _networkSlots.Take(LobbyConfig.ActiveSlotCount).Count(s => s.Type == SlotType.Human);
-            GUI.enabled = humanCount >= 1; // At least host
+            GUI.enabled = humanCount >= 1;
             if (GUILayout.Button("Start Game", GUILayout.Height(36), GUILayout.Width(150)))
-            {
                 StartMultiplayerGame();
-            }
             GUI.enabled = true;
             GUILayout.EndHorizontal();
 
@@ -886,12 +904,10 @@ namespace TheWaningBorder.Menu
         {
             GUILayout.Label("<b>Available Games</b>", _headerStyle);
 
-            if (_udpClient != null)
-            {
-                GUI.color = Color.green;
-                GUILayout.Label($"● Listening for broadcasts");
-                GUI.color = Color.white;
-            }
+            GUI.color = Color.green;
+            GUILayout.Label($"● Listening for broadcasts on port {BROADCAST_PORT}");
+            GUILayout.Label($"● Private port: {_clientPort}");
+            GUI.color = Color.white;
 
             GUILayout.Space(10);
 
@@ -908,9 +924,7 @@ namespace TheWaningBorder.Menu
                     GUILayout.Label($"{game.GameName} ({game.HostName})", GUILayout.Width(250));
                     GUILayout.Label(game.IPAddress, GUILayout.Width(120));
                     if (GUILayout.Button("Join", GUILayout.Width(80)))
-                    {
                         SendJoinRequest(game);
-                    }
                     GUILayout.EndHorizontal();
                 }
                 GUILayout.EndScrollView();
@@ -937,25 +951,30 @@ namespace TheWaningBorder.Menu
             GUI.color = Color.white;
 
             if (!string.IsNullOrEmpty(_status))
-            {
                 GUILayout.Label(_status);
-            }
 
             GUILayout.Space(10);
 
             GUILayout.Label("<b>Player Slots</b>", _headerStyle);
             _slotsScrollPos = GUILayout.BeginScrollView(_slotsScrollPos, GUILayout.Height(200));
             for (int i = 0; i < LobbyConfig.ActiveSlotCount; i++)
-            {
                 DrawNetworkSlot(i, isHost: false);
-            }
             GUILayout.EndScrollView();
 
             GUILayout.FlexibleSpace();
 
             if (GUILayout.Button("Leave", GUILayout.Height(36), GUILayout.Width(100)))
             {
-                SendToHost($"{MSG_LEAVE}{_mySlotIndex}");
+                if (_clientSocket != null && !string.IsNullOrEmpty(_hostIP))
+                {
+                    try
+                    {
+                        string msg = $"{MSG_LEAVE}{_mySlotIndex}";
+                        byte[] data = Encoding.UTF8.GetBytes(msg);
+                        _clientSocket.Send(data, data.Length, _hostIP, BROADCAST_PORT);
+                    }
+                    catch { }
+                }
                 Cleanup();
                 _state = LobbyState.MainChoice;
             }
@@ -974,8 +993,8 @@ namespace TheWaningBorder.Menu
             if (GUILayout.Button("Cancel", GUILayout.Height(36), GUILayout.Width(100)))
             {
                 Cleanup();
-                _state = LobbyState.BrowseGames;
                 StartClient();
+                _state = LobbyState.BrowseGames;
             }
         }
 
@@ -986,16 +1005,13 @@ namespace TheWaningBorder.Menu
 
             GUILayout.BeginHorizontal(_slotStyle);
 
-            // Faction color
             Color oldColor = GUI.color;
             GUI.color = LobbyConfig.Slots[index].GetFactionColor();
             GUILayout.Label("■", GUILayout.Width(20));
             GUI.color = oldColor;
 
-            // Faction name
             GUILayout.Label(faction.ToString(), _factionLabelStyle, GUILayout.Width(60));
 
-            // Slot content
             if (slot.Type == SlotType.Human)
             {
                 string label = string.IsNullOrEmpty(slot.PlayerName) ? "Player" : slot.PlayerName;
@@ -1011,14 +1027,10 @@ namespace TheWaningBorder.Menu
                 if (isHost)
                 {
                     if (GUILayout.Button("AI", GUILayout.Width(50)))
-                    {
                         slot.Type = SlotType.Empty;
-                    }
                     string[] difficulties = { "Easy", "Normal", "Hard", "Expert" };
                     if (GUILayout.Button(difficulties[(int)slot.AIDifficulty], GUILayout.Width(70)))
-                    {
                         slot.AIDifficulty = (LobbyAIDifficulty)(((int)slot.AIDifficulty + 1) % 4);
-                    }
                 }
                 else
                 {
@@ -1030,9 +1042,7 @@ namespace TheWaningBorder.Menu
                 if (isHost)
                 {
                     if (GUILayout.Button("Empty", GUILayout.Width(50)))
-                    {
                         slot.Type = SlotType.AI;
-                    }
                     GUILayout.Label("(Open)");
                 }
                 else
@@ -1090,37 +1100,41 @@ namespace TheWaningBorder.Menu
                 _networkSlots[i].Type = LobbyConfig.Slots[i].Type;
                 _networkSlots[i].PlayerName = LobbyConfig.Slots[i].PlayerName;
                 _networkSlots[i].AIDifficulty = LobbyConfig.Slots[i].AIDifficulty;
-                _networkSlots[i].ClientIP = "";
+                _networkSlots[i].ClientKey = "";
             }
         }
 
         private void StartMultiplayerGame()
         {
-            // Notify all clients
+            // Notify all clients with their assigned faction
             foreach (var client in _connectedClients.Values)
             {
                 try
                 {
-                    string msg = $"{MSG_START}{_port}";
+                    // Get the faction for this client's slot
+                    Faction clientFaction = LobbyConfig.Slots[client.SlotIndex].Faction;
+                    string msg = $"{MSG_START}{_port}|{(int)clientFaction}";
                     byte[] data = Encoding.UTF8.GetBytes(msg);
-                    _udpClient.Send(data, data.Length, client.EndPoint);
+                    _hostSocket.Send(data, data.Length, client.IP, client.Port);
+                    
+                    Debug.Log($"[MultiplayerLobbyUI] Sent START to {client.PlayerName} with faction {clientFaction}");
                 }
                 catch { }
             }
 
+            // Host is always slot 0 = Blue
+            GameSettings.LocalPlayerFaction = LobbyConfig.Slots[0].Faction;
             ApplySettingsAndStart();
         }
 
         private void ApplySettingsAndStart()
         {
-            // Apply settings
             GameSettings.FogOfWarEnabled = _fogOfWar;
             GameSettings.MapHalfSize = _mapHalfSize;
             GameSettings.SpawnLayout = _layout;
             GameSettings.TwoSides = _twoSides;
             GameSettings.SpawnSeed = _spawnSeed;
 
-            // Sync network slots back to LobbyConfig
             for (int i = 0; i < LobbyConfig.ActiveSlotCount; i++)
             {
                 LobbyConfig.Slots[i].Type = _networkSlots[i].Type;
@@ -1129,18 +1143,17 @@ namespace TheWaningBorder.Menu
             }
 
             GameSettings.TotalPlayers = LobbyConfig.ActiveSlotCount;
+            
+            // Apply faction mappings for multiplayer
             LobbyConfig.ApplyToGameSettings();
+            
+            Debug.Log($"[MultiplayerLobbyUI] Starting game - LocalPlayerFaction: {GameSettings.LocalPlayerFaction}, IsMultiplayer: {GameSettings.IsMultiplayer}");
 
-            // Load scene
             int sceneIndex = FindSceneIndexByName(GameSceneName);
             if (sceneIndex >= 0)
-            {
                 SceneManager.LoadScene(sceneIndex);
-            }
             else
-            {
                 _error = $"Scene '{GameSceneName}' not found!";
-            }
         }
 
         private void SetPlayerCount(int count)
@@ -1150,10 +1163,9 @@ namespace TheWaningBorder.Menu
             LobbyConfig.SetupMultiplayer(newCount);
             SyncSlotsFromLobbyConfig();
             
-            // Keep host in slot 0
             _networkSlots[0].Type = SlotType.Human;
             _networkSlots[0].PlayerName = _playerName;
-            _networkSlots[0].ClientIP = "HOST";
+            _networkSlots[0].ClientKey = "HOST";
         }
 
         private static int FindSceneIndexByName(string name)

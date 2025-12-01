@@ -99,7 +99,7 @@ public class RTSInput : MonoBehaviour
                 _selection.Clear();
                 if (e != Entity.Null && _em.Exists(e) &&
                     _em.HasComponent<FactionTag>(e) &&
-                    _em.GetComponentData<FactionTag>(e).Value == Faction.Blue &&
+                    _em.GetComponentData<FactionTag>(e).Value ==  GameSettings.LocalPlayerFaction &&
                     (_em.HasComponent<UnitTag>(e) || _em.HasComponent<BuildingTag>(e)))
                 {
                     _selection.Add(e);
@@ -128,7 +128,7 @@ public class RTSInput : MonoBehaviour
             if (!_em.Exists(e)) continue;
 
             if (!_em.HasComponent<FactionTag>(e) ||
-                _em.GetComponentData<FactionTag>(e).Value != Faction.Blue)
+                _em.GetComponentData<FactionTag>(e).Value != GameSettings.LocalPlayerFaction)
                 continue;
 
             if (!_em.HasComponent<UnitTag>(e) && !_em.HasComponent<BuildingTag>(e))
@@ -274,7 +274,7 @@ public class RTSInput : MonoBehaviour
         var targetFaction = _em.GetComponentData<FactionTag>(target).Value;
 
         // Assume player is Faction.Blue for now
-        if (targetFaction == Faction.Blue)
+        if (targetFaction == GameSettings.LocalPlayerFaction)
             return TargetType.FriendlyUnit;
         else
             return TargetType.Enemy;
@@ -394,7 +394,7 @@ public class RTSInput : MonoBehaviour
 
         for (int i = 0; i < ents.Length; i++)
         {
-            if (factions[i].Value != Faction.Blue) continue;
+            if (factions[i].Value != GameSettings.LocalPlayerFaction) continue;
 
             float dist = math.distance(transforms[i].Position, float3.zero); // TODO: use avg selected unit position
             if (dist < nearestDist)

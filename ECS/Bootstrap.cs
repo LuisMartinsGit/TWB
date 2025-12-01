@@ -44,13 +44,14 @@ namespace CrystallineRTS.Bootstrap
 
             HumanFaction.GeneratePlayers(GameSettings.TotalPlayers);
             EconomyBootstrap.EnsureFactionBanks(GameSettings.TotalPlayers);
-            AIBootstrap.InitializeAIPlayers(GameSettings.TotalPlayers, Faction.Blue);
+            AIBootstrap.InitializeAIPlayers(GameSettings.TotalPlayers, GameSettings.LocalPlayerFaction);
             //Ensure FoW exists
             var fow = Object.FindObjectOfType<FogOfWarManager>();
             if (fow == null)
                 FogOfWarManager.SetupFogOfWar();
 
             SyncFoWToTerrain();
+            Debug.Log($"[Bootstrap] Starting game - IsMultiplayer: {GameSettings.IsMultiplayer}, LocalPlayerFaction: {GameSettings.LocalPlayerFaction}");
 
         }
 

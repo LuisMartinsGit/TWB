@@ -11,7 +11,7 @@ public class FogOfWarManager : MonoBehaviour
     public float   CellSize = 0.1f;
 
     [Header("Visuals (Human Player)")]
-    public Faction HumanFaction = Faction.Blue;
+    public Faction HumanFaction = GameSettings.LocalPlayerFaction;
     [Tooltip("Material that uses the Unlit/FogOfWar shader.")]
     public Material FogMaterial;
     [Tooltip("Quad or plane that covers the playable area; its material will be set to FogMaterial.")]
@@ -271,7 +271,7 @@ public class FogOfWarManager : MonoBehaviour
         mgr.WorldMin     = new Vector2(-half, -half);
         mgr.WorldMax     = new Vector2( half,  half);
         mgr.CellSize     = 1f; // keep 1u cells; grid scales with map size
-        mgr.HumanFaction = Faction.Blue;
+        mgr.HumanFaction = GameSettings.LocalPlayerFaction;
 
         // Material for FoW (same shader)
         var mat = new Material(Shader.Find("Unlit/FogOfWar"));
