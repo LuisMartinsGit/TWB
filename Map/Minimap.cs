@@ -88,7 +88,10 @@ public sealed class MinimapFlat : MonoBehaviour
             worldMax = _fow.WorldMax;
             humanFaction = _fow.HumanFaction;
         }
-
+if (GameSettings.IsMultiplayer)
+{
+    humanFaction = GameSettings.LocalPlayerFaction;
+}
         samples = Mathf.Clamp(samples, 64, Mathf.Min(512, sizePixels));
 
         _tex = new Texture2D(sizePixels, sizePixels, TextureFormat.RGBA32, false, false);
@@ -135,15 +138,18 @@ public sealed class MinimapFlat : MonoBehaviour
 
     void LateUpdate()
     {
-        if (_fow == null)
-        {
-            _fow = FindObjectOfType<FogOfWarManager>();
-            if (_fow != null)
-            {
-                worldMin = _fow.WorldMin;
-                worldMax = _fow.WorldMax;
-            }
-        }
+        if (_fow != null)
+{
+    worldMin = _fow.WorldMin;
+    worldMax = _fow.WorldMax;
+    humanFaction = _fow.HumanFaction;
+}
+
+// Override for multiplayer
+if (GameSettings.IsMultiplayer)
+{
+    humanFaction = GameSettings.LocalPlayerFaction;
+}
         UpdateCameraViewRect();
     }
 

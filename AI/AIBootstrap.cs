@@ -30,8 +30,8 @@ namespace TheWaningBorder.AI
                 Faction faction = (Faction)i;
                 
                 // Skip human player
-                if (faction == humanPlayerFaction)
-                    continue;
+if (GameSettings.IsFactionHumanControlled(faction))
+    continue;
 
                 CreateAIBrain(em, faction, GetDefaultPersonality(faction), AIDifficulty.Normal);
             }

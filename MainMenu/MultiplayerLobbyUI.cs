@@ -711,8 +711,10 @@ namespace TheWaningBorder.Menu
 
         private void ProcessGameStart(string message)
         {
-            // Format: TWB_START|Port|FactionIndex
+            // Format: TWB_START|Port|FactionIndex|LockstepPort
             string[] parts = message.Split('|');
+            
+            int lockstepPort = BROADCAST_PORT + 1; // Default fallback
             
             if (parts.Length >= 3 && int.TryParse(parts[2], out int factionIndex))
             {
@@ -725,6 +727,24 @@ namespace TheWaningBorder.Menu
                 GameSettings.LocalPlayerFaction = LobbyConfig.Slots[_mySlotIndex].Faction;
                 Debug.Log($"[MultiplayerLobbyUI] Game starting! Faction from slot {_mySlotIndex}: {GameSettings.LocalPlayerFaction}");
             }
+
+            // Parse lockstep port
+            if (parts.Length >= 4 && int.TryParse(parts[3], out int parsedLockstepPort))
+            {
+                lockstepPort = parsedLockstepPort;
+            }
+
+            // Setup lockstep bootstrap for CLIENT
+            // Use a random local port for client's lockstep socket
+            int clientLockstepPort = _clientPort + 1000; // Offset from lobby port
+            Multiplayer.LockstepBootstrap.SetupAsClient(
+                clientLockstepPort, 
+                _hostIP, 
+                lockstepPort, 
+                _mySlotIndex, 
+                GameSettings.LocalPlayerFaction);
+
+            Debug.Log($"[MultiplayerLobbyUI] Client lockstep configured: local port {clientLockstepPort}, host {_hostIP}:{lockstepPort}");
             
             ApplySettingsAndStart();
         }
@@ -1106,18 +1126,38 @@ namespace TheWaningBorder.Menu
 
         private void StartMultiplayerGame()
         {
-            // Notify all clients with their assigned faction
+            // Setup lockstep bootstrap for HOST
+            var clientList = new List<Multiplayer.ClientInfo>();
+            foreach (var client in _connectedClients.Values)
+            {
+                clientList.Add(new Multiplayer.ClientInfo
+                {
+                    PlayerName = client.PlayerName,
+                    SlotIndex = client.SlotIndex,
+                    IP = client.IP,
+                    Port = client.Port,
+                    Faction = LobbyConfig.Slots[client.SlotIndex].Faction
+                });
+            }
+            
+            // Create lockstep bootstrap with host configuration
+            // Use a dedicated lockstep port (game port + 1)
+            int lockstepPort = _port + 1;
+            Multiplayer.LockstepBootstrap.SetupAsHost(lockstepPort, clientList);
+
+            // Notify all clients with their assigned faction AND lockstep port
             foreach (var client in _connectedClients.Values)
             {
                 try
                 {
                     // Get the faction for this client's slot
                     Faction clientFaction = LobbyConfig.Slots[client.SlotIndex].Faction;
-                    string msg = $"{MSG_START}{_port}|{(int)clientFaction}";
+                    // Format: TWB_START|GamePort|FactionIndex|LockstepPort
+                    string msg = $"{MSG_START}{_port}|{(int)clientFaction}|{lockstepPort}";
                     byte[] data = Encoding.UTF8.GetBytes(msg);
                     _hostSocket.Send(data, data.Length, client.IP, client.Port);
                     
-                    Debug.Log($"[MultiplayerLobbyUI] Sent START to {client.PlayerName} with faction {clientFaction}");
+                    Debug.Log($"[MultiplayerLobbyUI] Sent START to {client.PlayerName} with faction {clientFaction}, lockstep port {lockstepPort}");
                 }
                 catch { }
             }

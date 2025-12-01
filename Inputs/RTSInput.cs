@@ -6,6 +6,7 @@ using Unity.Mathematics;
 using Unity.Transforms;
 using Unity.Collections;
 using TheWaningBorder.Core;
+using TheWaningBorder.Multiplayer;
 
 public class RTSInput : MonoBehaviour
 {
@@ -163,26 +164,19 @@ public class RTSInput : MonoBehaviour
                 if (!_em.Exists(e)) continue;
                 if (!_em.HasComponent<BuildingTag>(e)) continue;
 
-                if (!_em.HasComponent<RallyPoint>(e)) _em.AddComponent<RallyPoint>(e);
-                _em.SetComponentData(e, new RallyPoint { Position = clickWorld, Has = 1 });
+                // CHANGED: Use LockstepInputAdapter
+                LockstepInputAdapter.SetRallyPoint(_em, e, clickWorld);
             }
             return;
         }
 
-        // Check what the user clicked on
         var target = RaycastPickEntity();
-        
-        // Determine target type
         TargetType targetType = DetermineTargetType(target);
-        
-        // Determine selected unit capabilities
         UnitCapabilities capabilities = DetermineCapabilities();
 
-        // Route to appropriate command based on target and capabilities
         switch (targetType)
         {
             case TargetType.Enemy:
-                // Attack command (if units can attack)
                 if (capabilities.CanAttack)
                 {
                     for (int i = 0; i < _selection.Count; i++)
@@ -191,13 +185,13 @@ public class RTSInput : MonoBehaviour
                         if (!_em.Exists(e)) continue;
                         if (_em.HasComponent<BuildingTag>(e)) continue;
 
-                        CommandGateway.IssueAttack(_em, e, target);
+                        // CHANGED: Use LockstepInputAdapter
+                        LockstepInputAdapter.IssueAttack(_em, e, target);
                     }
                 }
                 break;
 
             case TargetType.FriendlyUnit:
-                // Heal command (if healers are selected)
                 if (capabilities.CanHeal)
                 {
                     for (int i = 0; i < _selection.Count; i++)
@@ -206,18 +200,17 @@ public class RTSInput : MonoBehaviour
                         if (!_em.Exists(e)) continue;
                         if (!CanHeal(e)) continue;
 
-                        CommandGateway.IssueHeal(_em, e, target);
+                        // CHANGED: Use LockstepInputAdapter
+                        LockstepInputAdapter.IssueHeal(_em, e, target);
                     }
                 }
                 else
                 {
-                    // Default: move to friendly unit position
                     IssueFormationMove(clickWorld);
                 }
                 break;
 
             case TargetType.Resource:
-                // Gather command (if miners are selected)
                 if (capabilities.CanGather)
                 {
                     Entity depositLocation = FindNearestGatherersHut();
@@ -227,19 +220,18 @@ public class RTSInput : MonoBehaviour
                         if (!_em.Exists(e)) continue;
                         if (!_em.HasComponent<TheWaningBorder.Humans.MinerTag>(e)) continue;
 
-                        CommandGateway.IssueGather(_em, e, target, depositLocation);
+                        // CHANGED: Use LockstepInputAdapter
+                        LockstepInputAdapter.IssueGather(_em, e, target, depositLocation);
                     }
                 }
                 else
                 {
-                    // Default: move to resource position
                     IssueFormationMove(clickWorld);
                 }
                 break;
 
             case TargetType.Ground:
             default:
-                // Move command
                 IssueFormationMove(clickWorld);
                 break;
         }
@@ -372,7 +364,7 @@ public class RTSInput : MonoBehaviour
                 if (e == Entity.Null) break;
 
                 float3 slot = topLeft + right * (c * spacing) - forward * (r * spacing);
-                CommandGateway.IssueMove(_em,e, slot);
+                LockstepInputAdapter.IssueMove(_em, e, slot);
 
                 Debug.DrawLine(
                     (Vector3)_em.GetComponentData<LocalTransform>(e).Position,
