@@ -324,7 +324,7 @@ public class BuilderCommandPanel : MonoBehaviour
         if (TryGetFirstSelectedBuilder(out var builder) && _em.Exists(builder) && _em.HasComponent<FactionTag>(builder))
             return _em.GetComponentData<FactionTag>(builder).Value;
 
-        return Faction.Blue; // fallback if nothing selected
+        return GameSettings.LocalPlayerFaction; // fallback if nothing selected
     }
 
     bool TryGetFirstSelectedBuilder(out Entity builder)

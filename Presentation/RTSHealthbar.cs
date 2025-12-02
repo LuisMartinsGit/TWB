@@ -43,7 +43,7 @@ public class HealthbarOverlay : MonoBehaviour
             }
             else if (isUnit)
             {
-                var isFriendly = _em.HasComponent<FactionTag>(e) && _em.GetComponentData<FactionTag>(e).Value == Faction.Blue;
+                var isFriendly = _em.HasComponent<FactionTag>(e) && _em.GetComponentData<FactionTag>(e).Value == GameSettings.LocalPlayerFaction;
                 bool selected = (sel != null && sel.Contains(e));
                 bool hovered  = (hov == e);
 

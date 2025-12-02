@@ -12,7 +12,7 @@ namespace TheWaningBorder.UI
     public class ResourceHUD_IMGUI : MonoBehaviour
     {
         [Header("Config")]
-        [SerializeField] private Faction humanFaction = Faction.Blue;
+        [SerializeField] private Faction humanFaction = GameSettings.LocalPlayerFaction;
         [SerializeField] private float refreshInterval = 0.25f;
         [SerializeField] private float topBarHeight = 32f;
         [SerializeField] private float leftPadding = 10f;
@@ -258,9 +258,11 @@ namespace TheWaningBorder.UI
 
         private string GetFactionName(Faction faction)
         {
+            if (faction == GameSettings.LocalPlayerFaction) return "PLAYER";
+
             return faction switch
             {
-                Faction.Blue => "PLAYER",
+                Faction.Blue => "AI (Blue)",
                 Faction.Red => "AI (Red)",
                 Faction.Green => "AI (Green)",
                 Faction.Yellow => "AI (Yellow)",

@@ -2,8 +2,10 @@
 // Unified command interface for AI systems - routes through CommandRouter
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.Transforms;
 using UnityEngine;
 using TheWaningBorder.Core;
+using TheWaningBorder.Multiplayer;
 
 namespace TheWaningBorder.AI
 {
@@ -38,8 +40,8 @@ namespace TheWaningBorder.AI
                 return true;
             
             // In multiplayer, only the host runs AI
-            if (Multiplayer.LockstepManager.Instance != null)
-                return Multiplayer.LockstepManager.Instance.IsHost;
+            if (LockstepManager.Instance != null)
+                return LockstepManager.Instance.IsHost;
             
             // Fallback: don't issue commands if we can't determine
             return false;

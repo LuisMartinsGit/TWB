@@ -14,13 +14,12 @@ using TheWaningBorder.Humans;
 [UpdateInGroup(typeof(SimulationSystemGroup))]
 public partial struct UnifiedTrainingSystem : ISystem
 {
-    [BurstCompile]
+
     public void OnCreate(ref SystemState state)
     {
         state.RequireForUpdate<TrainingState>();
     }
 
-    [BurstCompile]
     public void OnUpdate(ref SystemState state)
     {
         var db = TechTreeDB.Instance;

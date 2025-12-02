@@ -149,7 +149,7 @@ public class EntityActionPanel : MonoBehaviour
             if (!em.Exists(entity)) return;
             
             // Get faction
-            Faction faction = Faction.Blue;
+            Faction faction = GameSettings.LocalPlayerFaction;
             if (em.HasComponent<FactionTag>(entity))
                 faction = em.GetComponentData<FactionTag>(entity).Value;
             

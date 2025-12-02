@@ -1,4 +1,5 @@
-// RTSInput.cs - Refactored to use CommandGateway
+// Assets/Scripts/Inputs/RTSInput.cs
+// Player input handler - routes all commands through CommandRouter
 using System.Collections.Generic;
 using UnityEngine;
 using Unity.Entities;
@@ -7,6 +8,7 @@ using Unity.Transforms;
 using Unity.Collections;
 using TheWaningBorder.Core;
 using TheWaningBorder.Multiplayer;
+using TheWaningBorder.AI;
 
 public class RTSInput : MonoBehaviour
 {
@@ -72,6 +74,15 @@ public class RTSInput : MonoBehaviour
         CurrentHover = (_em.Exists(hovered)) ? hovered : Entity.Null;
     }
 
+    void CleanSelection()
+    {
+        for (int i = _selection.Count - 1; i >= 0; i--)
+        {
+            if (!_em.Exists(_selection[i]))
+                _selection.RemoveAt(i);
+        }
+    }
+
     // ---------------- Selection ----------------
     void HandleSelection()
     {
@@ -100,7 +111,7 @@ public class RTSInput : MonoBehaviour
                 _selection.Clear();
                 if (e != Entity.Null && _em.Exists(e) &&
                     _em.HasComponent<FactionTag>(e) &&
-                    _em.GetComponentData<FactionTag>(e).Value ==  GameSettings.LocalPlayerFaction &&
+                    _em.GetComponentData<FactionTag>(e).Value == GameSettings.LocalPlayerFaction &&
                     (_em.HasComponent<UnitTag>(e) || _em.HasComponent<BuildingTag>(e)))
                 {
                     _selection.Add(e);
@@ -146,7 +157,7 @@ public class RTSInput : MonoBehaviour
         ents.Dispose();
     }
 
-    // ---------------- Right-click commands (REFACTORED FOR COMMANDGATEWAY) ----------------
+    // ---------------- Right-click commands (ALL GO THROUGH COMMANDROUTER) ----------------
     void HandleRightClick()
     {
         if (!Input.GetMouseButtonDown(1)) return;
@@ -164,8 +175,8 @@ public class RTSInput : MonoBehaviour
                 if (!_em.Exists(e)) continue;
                 if (!_em.HasComponent<BuildingTag>(e)) continue;
 
-                // CHANGED: Use LockstepInputAdapter
-                LockstepInputAdapter.SetRallyPoint(_em, e, clickWorld);
+                // Route through CommandRouter (handles lockstep automatically)
+                CommandRouter.SetRallyPoint(e, clickWorld, CommandRouter.CommandSource.LocalPlayer);
             }
             return;
         }
@@ -185,8 +196,8 @@ public class RTSInput : MonoBehaviour
                         if (!_em.Exists(e)) continue;
                         if (_em.HasComponent<BuildingTag>(e)) continue;
 
-                        // CHANGED: Use LockstepInputAdapter
-                        LockstepInputAdapter.IssueAttack(_em, e, target);
+                        // Route through CommandRouter
+                        CommandRouter.IssueAttack(e, target, CommandRouter.CommandSource.LocalPlayer);
                     }
                 }
                 break;
@@ -200,8 +211,8 @@ public class RTSInput : MonoBehaviour
                         if (!_em.Exists(e)) continue;
                         if (!CanHeal(e)) continue;
 
-                        // CHANGED: Use LockstepInputAdapter
-                        LockstepInputAdapter.IssueHeal(_em, e, target);
+                        // Route through CommandRouter
+                        CommandRouter.IssueHeal(e, target, CommandRouter.CommandSource.LocalPlayer);
                     }
                 }
                 else
@@ -220,8 +231,8 @@ public class RTSInput : MonoBehaviour
                         if (!_em.Exists(e)) continue;
                         if (!_em.HasComponent<TheWaningBorder.Humans.MinerTag>(e)) continue;
 
-                        // CHANGED: Use LockstepInputAdapter
-                        LockstepInputAdapter.IssueGather(_em, e, target, depositLocation);
+                        // Route through CommandRouter
+                        CommandRouter.IssueGather(e, target, depositLocation, CommandRouter.CommandSource.LocalPlayer);
                     }
                 }
                 else
@@ -237,50 +248,111 @@ public class RTSInput : MonoBehaviour
         }
     }
 
-    private bool IsSetRallyPointMode()
+    // Formation movement - all units through CommandRouter
+    private void IssueFormationMove(float3 clickWorld)
+    {
+        int count = 0;
+        for (int i = 0; i < _selection.Count; i++)
+        {
+            if (_em.Exists(_selection[i]) && !_em.HasComponent<BuildingTag>(_selection[i]))
+                count++;
+        }
+
+        if (count == 0) return;
+
+        int cols = Mathf.CeilToInt(Mathf.Sqrt(count));
+        int rows = Mathf.CeilToInt((float)count / cols);
+        float spacing = 2.0f;
+
+        var cam = Camera.main;
+        Vector3 camForward = cam ? Vector3.ProjectOnPlane(cam.transform.forward, Vector3.up).normalized : Vector3.forward;
+        Vector3 right = Vector3.Cross(Vector3.up, camForward).normalized;
+        float3 forward = new float3(camForward.x, camForward.y, camForward.z);
+        float3 rightF3 = new float3(right.x, right.y, right.z);
+
+        float3 topLeft = clickWorld - rightF3 * ((cols - 1) * spacing * 0.5f) + forward * ((rows - 1) * spacing * 0.5f);
+
+        int idx = 0;
+        for (int r = 0; r < rows; r++)
+        {
+            for (int c = 0; c < cols; c++)
+            {
+                if (idx >= count) break;
+
+                Entity e = Entity.Null;
+                int searchIdx = 0;
+                for (int i = 0; i < _selection.Count; i++)
+                {
+                    if (_em.Exists(_selection[i]) && !_em.HasComponent<BuildingTag>(_selection[i]))
+                    {
+                        if (searchIdx == idx)
+                        {
+                            e = _selection[i];
+                            break;
+                        }
+                        searchIdx++;
+                    }
+                }
+
+                if (e == Entity.Null) { idx++; continue; }
+
+                float3 slot = topLeft + rightF3 * (c * spacing) - forward * (r * spacing);
+
+                // Route through CommandRouter (handles lockstep automatically)
+                CommandRouter.IssueMove(e, slot, CommandRouter.CommandSource.LocalPlayer);
+
+                idx++;
+            }
+        }
+    }
+
+    // ---------------- Helper Methods ----------------
+    
+    bool IsSetRallyPointMode()
     {
         return _rallyMode;
     }
 
-    private enum TargetType
-    {
-        Ground,
-        Enemy,
-        FriendlyUnit,
-        Resource
-    }
+    enum TargetType { Ground, Enemy, FriendlyUnit, Resource }
 
-    private TargetType DetermineTargetType(Entity target)
+    TargetType DetermineTargetType(Entity target)
     {
         if (target == Entity.Null || !_em.Exists(target))
             return TargetType.Ground;
 
-        // Check if it's a resource node
-        if (_em.HasComponent<TheWaningBorder.AI.IronMineTag>(target))
+        // Check if it's a resource node (Iron Mine)
+        if (_em.HasComponent<IronMineTag>(target))
             return TargetType.Resource;
 
-        // Check if it has a faction
-        if (!_em.HasComponent<FactionTag>(target))
-            return TargetType.Ground;
+        // Check faction
+        if (_em.HasComponent<FactionTag>(target))
+        {
+            var faction = _em.GetComponentData<FactionTag>(target).Value;
+            if (faction == GameSettings.LocalPlayerFaction)
+            {
+                // It's ours - check if it's a unit we can heal
+                if (_em.HasComponent<UnitTag>(target))
+                    return TargetType.FriendlyUnit;
+            }
+            else
+            {
+                // Enemy (any non-local faction)
+                return TargetType.Enemy;
+            }
+        }
 
-        var targetFaction = _em.GetComponentData<FactionTag>(target).Value;
-
-        // Assume player is Faction.Blue for now
-        if (targetFaction == GameSettings.LocalPlayerFaction)
-            return TargetType.FriendlyUnit;
-        else
-            return TargetType.Enemy;
+        return TargetType.Ground;
     }
 
-    private struct UnitCapabilities
+    struct UnitCapabilities
     {
         public bool CanAttack;
-        public bool CanHeal;
         public bool CanGather;
+        public bool CanHeal;
         public bool CanBuild;
     }
 
-    private UnitCapabilities DetermineCapabilities()
+    UnitCapabilities DetermineCapabilities()
     {
         var caps = new UnitCapabilities();
 
@@ -288,20 +360,15 @@ public class RTSInput : MonoBehaviour
         {
             var e = _selection[i];
             if (!_em.Exists(e)) continue;
+            if (_em.HasComponent<BuildingTag>(e)) continue;
 
-            // Check for combat units
             if (_em.HasComponent<Damage>(e))
                 caps.CanAttack = true;
-
-            // Check for healers (would have specific tag)
-            if (CanHeal(e))
-                caps.CanHeal = true;
-
-            // Check for miners
             if (_em.HasComponent<TheWaningBorder.Humans.MinerTag>(e))
                 caps.CanGather = true;
-
-            // Check for builders
+            // Check for healer capability - currently not implemented
+            if (CanHeal(e))
+                caps.CanHeal = true;
             if (_em.HasComponent<CanBuild>(e))
                 caps.CanBuild = true;
         }
@@ -309,279 +376,189 @@ public class RTSInput : MonoBehaviour
         return caps;
     }
 
-    private bool CanHeal(Entity e)
+    bool CanHeal(Entity e)
     {
         // Placeholder: Check if unit has healing capability
         // TODO: Add proper healing tag/component when Litharch is implemented
         return false;
     }
 
-    private void IssueFormationMove(float3 clickWorld)
+    Entity FindNearestGatherersHut()
     {
-        // Count units (excluding buildings)
-        int count = 0;
-        for (int i = 0; i < _selection.Count; i++)
-        {
-            if (!_em.Exists(_selection[i])) continue;
-            if (_em.HasComponent<BuildingTag>(_selection[i])) continue;
-            count++;
-        }
-
-        if (count == 0) return;
-
-        // Simple formation calculation
-        int cols = Mathf.CeilToInt(Mathf.Sqrt(count));
-        int rows = Mathf.CeilToInt((float)count / cols);
-
-        float spacing = 2f;
-        float3 forward = new float3(0, 0, 1);
-        float3 right = new float3(1, 0, 0);
-
-        float halfWidth = (cols - 1) * spacing * 0.5f;
-        float halfDepth = (rows - 1) * spacing * 0.5f;
-        float3 topLeft = clickWorld - right * halfWidth + forward * halfDepth;
-
-        int idx = 0;
-        for (int r = 0; r < rows; r++)
-        {
-            for (int c = 0; c < cols; c++)
-            {
-                if (idx >= _selection.Count) break;
-
-                // Find next valid unit
-                Entity e = Entity.Null;
-                while (idx < _selection.Count)
-                {
-                    var candidate = _selection[idx];
-                    idx++;
-                    if (_em.Exists(candidate) && !_em.HasComponent<BuildingTag>(candidate))
-                    {
-                        e = candidate;
-                        break;
-                    }
-                }
-
-                if (e == Entity.Null) break;
-
-                float3 slot = topLeft + right * (c * spacing) - forward * (r * spacing);
-                LockstepInputAdapter.IssueMove(_em, e, slot);
-
-                Debug.DrawLine(
-                    (Vector3)_em.GetComponentData<LocalTransform>(e).Position,
-                    (Vector3)slot, Color.cyan, 1.0f);
-            }
-        }
-    }
-
-    private Entity FindNearestGatherersHut()
-    {
-        // Find the nearest GatherersHut for the player
         Entity nearest = Entity.Null;
         float nearestDist = float.MaxValue;
 
-        var query = _em.CreateEntityQuery(typeof(GathererHutTag), typeof(FactionTag), typeof(LocalTransform));
-        var ents = query.ToEntityArray(Allocator.Temp);
-        var transforms = query.ToComponentDataArray<LocalTransform>(Allocator.Temp);
-        var factions = query.ToComponentDataArray<FactionTag>(Allocator.Temp);
-
-        for (int i = 0; i < ents.Length; i++)
+        // Get average position of selected miners
+        float3 avgPos = float3.zero;
+        int count = 0;
+        for (int i = 0; i < _selection.Count; i++)
         {
-            if (factions[i].Value != GameSettings.LocalPlayerFaction) continue;
-
-            float dist = math.distance(transforms[i].Position, float3.zero); // TODO: use avg selected unit position
-            if (dist < nearestDist)
+            if (_em.Exists(_selection[i]) && _em.HasComponent<LocalTransform>(_selection[i]))
             {
-                nearestDist = dist;
-                nearest = ents[i];
+                avgPos += _em.GetComponentData<LocalTransform>(_selection[i]).Position;
+                count++;
             }
         }
+        if (count > 0) avgPos /= count;
 
-        ents.Dispose();
-        transforms.Dispose();
-        factions.Dispose();
-
-        return nearest;
-    }
-
-    // ---------------- Maintenance ----------------
-    void CleanSelection()
-    {
-        for (int i = _selection.Count - 1; i >= 0; i--)
-        {
-            var e = _selection[i];
-            if (!_em.Exists(e)) { _selection.RemoveAt(i); continue; }
-            if (_em.HasComponent<Health>(e) && _em.GetComponentData<Health>(e).Value <= 0)
-                _selection.RemoveAt(i);
-        }
-    }
-
-    // ---------------- Picking helpers ----------------
-    Entity RaycastPickEntity()
-    {
-        if (!RaycastHitObject(out RaycastHit hit)) return Entity.Null;
-
-        var query = _em.CreateEntityQuery(typeof(LocalTransform));
+        var query = _em.CreateEntityQuery(typeof(GathererHutTag), typeof(LocalTransform), typeof(FactionTag));
         var ents = query.ToEntityArray(Allocator.Temp);
 
-        Entity best = Entity.Null;
-        float bestD = 1.25f;
         for (int i = 0; i < ents.Length; i++)
         {
             var e = ents[i];
             if (!_em.Exists(e)) continue;
-            var xf = _em.GetComponentData<LocalTransform>(e);
-            float d = Vector3.Distance(hit.point, (Vector3)xf.Position);
-            if (d < bestD) { bestD = d; best = e; }
-        }
-        ents.Dispose();
-        return best;
-    }
+            if (_em.GetComponentData<FactionTag>(e).Value != GameSettings.LocalPlayerFaction) continue;
 
-    bool RaycastHitObject(out RaycastHit hit)
-    {
-        var cam = Camera.main;
-        hit = default;
-        if (!cam) return false;
-
-        Ray ray = cam.ScreenPointToRay(Input.mousePosition);
-        return Physics.Raycast(ray, out hit, 10000f, clickMask, QueryTriggerInteraction.Ignore);
-    }
-
-    bool TryGetClickPoint(out float3 world)
-    {
-        world = default;
-        var cam = Camera.main;
-        if (!cam) return false;
-
-        Ray ray = cam.ScreenPointToRay(Input.mousePosition);
-
-        if (Physics.Raycast(ray, out var hit, 10000f, clickMask, QueryTriggerInteraction.Ignore))
-        { world = (float3)hit.point; return true; }
-
-        var terrain = Terrain.activeTerrain;
-        if (terrain && terrain.terrainData)
-        {
-            Plane tp = new Plane(Vector3.up, new Vector3(0, terrain.transform.position.y, 0));
-            if (tp.Raycast(ray, out float t))
+            var pos = _em.GetComponentData<LocalTransform>(e).Position;
+            float dist = math.distance(avgPos, pos);
+            if (dist < nearestDist)
             {
-                var p = ray.GetPoint(t);
-                float ty = terrain.SampleHeight(p) + terrain.transform.position.y;
-                world = new float3(p.x, ty, p.z);
-                return true;
+                nearestDist = dist;
+                nearest = e;
             }
         }
 
-        Plane ground = new Plane(Vector3.up, Vector3.zero);
-        if (ground.Raycast(ray, out float d2))
+        ents.Dispose();
+        return nearest;
+    }
+
+    // ---------------- Raycasting ----------------
+    
+    Entity RaycastPickEntity()
+    {
+        var cam = Camera.main;
+        if (!cam) return Entity.Null;
+
+        Ray ray = cam.ScreenPointToRay(Input.mousePosition);
+        if (Physics.Raycast(ray, out RaycastHit hit, 1000f, clickMask))
         {
-            var p = ray.GetPoint(d2);
-            world = new float3(p.x, 0f, p.z);
+            var go = hit.collider.gameObject;
+            // Check for EntityReference component (your project's version of EntityLink)
+            var link = go.GetComponent<EntityReference>();
+            if (link != null && _em.Exists(link.Entity))
+                return link.Entity;
+            
+            // Check parent
+            if (go.transform.parent != null)
+            {
+                link = go.transform.parent.GetComponent<EntityReference>();
+                if (link != null && _em.Exists(link.Entity))
+                    return link.Entity;
+            }
+        }
+        return Entity.Null;
+    }
+
+    bool TryGetClickPoint(out float3 point)
+    {
+        point = float3.zero;
+        var cam = Camera.main;
+        if (!cam) return false;
+
+        Ray ray = cam.ScreenPointToRay(Input.mousePosition);
+        if (Physics.Raycast(ray, out RaycastHit hit, 1000f, clickMask))
+        {
+            point = hit.point;
             return true;
         }
         return false;
     }
 
-    // ---------------- Rect/bounds helpers ----------------
-    static Rect MakeScreenRect(Vector3 a, Vector3 b)
+    Rect MakeScreenRect(Vector3 a, Vector3 b)
     {
-        float xMin = Mathf.Min(a.x, b.x);
-        float yMin = Mathf.Min(a.y, b.y);
-        float xMax = Mathf.Max(a.x, b.x);
-        float yMax = Mathf.Max(a.y, b.y);
-        return Rect.MinMaxRect(xMin,yMin, xMax, yMax);
-    }
-
-    static Rect ScreenToGuiRect(Rect screenRect)
-    {
-        return new Rect(
-            screenRect.xMin,
-            Screen.height - screenRect.yMax,
-            screenRect.width,
-            screenRect.height
-        );
-    }
-
-    static Rect ProjectWorldBoundsToScreenRect(Camera cam, Bounds worldBounds)
-    {
-        Vector3 c = worldBounds.center;
-        Vector3 e = worldBounds.extents;
-        Vector3[] corners = new Vector3[8] {
-            c + new Vector3( e.x,  e.y,  e.z),
-            c + new Vector3( e.x,  e.y, -e.z),
-            c + new Vector3( e.x, -e.y,  e.z),
-            c + new Vector3( e.x, -e.y, -e.z),
-            c + new Vector3(-e.x,  e.y,  e.z),
-            c + new Vector3(-e.x,  e.y, -e.z),
-            c + new Vector3(-e.x, -e.y,  e.z),
-            c + new Vector3(-e.x, -e.y, -e.z)
-        };
-
-        float xMin = float.PositiveInfinity, xMax = float.NegativeInfinity;
-        float yMin = float.PositiveInfinity, yMax = float.NegativeInfinity;
-
-        bool anyInFront = false;
-        for (int i = 0; i < 8; i++)
-        {
-            Vector3 sp = cam.WorldToScreenPoint(corners[i]);
-            if (sp.z <= 0f) continue;
-            anyInFront = true;
-            xMin = Mathf.Min(xMin, sp.x);
-            xMax = Mathf.Max(xMax, sp.x);
-            yMin = Mathf.Min(yMin, sp.y);
-            yMax = Mathf.Max(yMax, sp.y);
-        }
-
-        if (!anyInFront) return new Rect(0, 0, 0, 0);
-        return Rect.MinMaxRect(xMin, yMin, xMax, yMax);
+        float minX = Mathf.Min(a.x, b.x);
+        float maxX = Mathf.Max(a.x, b.x);
+        float minY = Mathf.Min(a.y, b.y);
+        float maxY = Mathf.Max(a.y, b.y);
+        return new Rect(minX, minY, maxX - minX, maxY - minY);
     }
 
     Bounds ComputeEntityWorldBounds(Entity e)
     {
-        var xf = _em.GetComponentData<LocalTransform>(e);
-        Vector3 pos = xf.Position;
+        if (!_em.HasComponent<LocalTransform>(e))
+            return new Bounds(Vector3.zero, Vector3.zero);
 
-        float r = 0.6f;
-        if (_em.HasComponent<Radius>(e)) r = _em.GetComponentData<Radius>(e).Value;
+        var pos = _em.GetComponentData<LocalTransform>(e).Position;
+        return new Bounds(new Vector3(pos.x, pos.y, pos.z), Vector3.one * 2f);
+    }
 
-        float height = 1.8f;
-        if (_em.HasComponent<BuildingTag>(e))
+    Rect ProjectWorldBoundsToScreenRect(Camera cam, Bounds wb)
+    {
+        Vector3[] corners = new Vector3[8];
+        corners[0] = wb.min;
+        corners[1] = new Vector3(wb.min.x, wb.min.y, wb.max.z);
+        corners[2] = new Vector3(wb.min.x, wb.max.y, wb.min.z);
+        corners[3] = new Vector3(wb.min.x, wb.max.y, wb.max.z);
+        corners[4] = new Vector3(wb.max.x, wb.min.y, wb.min.z);
+        corners[5] = new Vector3(wb.max.x, wb.min.y, wb.max.z);
+        corners[6] = new Vector3(wb.max.x, wb.max.y, wb.min.z);
+        corners[7] = wb.max;
+
+        float minX = float.MaxValue, minY = float.MaxValue;
+        float maxX = float.MinValue, maxY = float.MinValue;
+
+        for (int i = 0; i < 8; i++)
         {
-            r = 1.6f;
-            height = 3.0f;
+            Vector3 sp = cam.WorldToScreenPoint(corners[i]);
+            if (sp.z < 0) continue;
+            if (sp.x < minX) minX = sp.x;
+            if (sp.x > maxX) maxX = sp.x;
+            if (sp.y < minY) minY = sp.y;
+            if (sp.y > maxY) maxY = sp.y;
         }
 
-        var extents = new Vector3(r, height * 0.5f, r);
-        return new Bounds(pos + Vector3.up * (height * 0.5f), extents * 2f);
+        if (minX > maxX || minY > maxY)
+            return new Rect(0, 0, 0, 0);
+
+        return new Rect(minX, minY, maxX - minX, maxY - minY);
     }
 
-    // ---------------- IMGUI for drag box ----------------
-    static Texture2D _whiteTex;
-
-    static void EnsureWhiteTex()
-    {
-        if (_whiteTex == null) _whiteTex = Texture2D.whiteTexture;
-    }
-
-    static void DrawGuiRect(Rect r, Color c)
-    {
-        EnsureWhiteTex();
-        var old = GUI.color; GUI.color = c;
-        GUI.DrawTexture(r, _whiteTex);
-        GUI.color = old;
-    }
-
+    // ---------------- GUI ----------------
+    
     void OnGUI()
     {
-        if (_isDragging)
+        // Draw selection rectangle
+        if (_isDragging && (_dragScreenRect.width > 4f || _dragScreenRect.height > 4f))
         {
-            var guiRect = ScreenToGuiRect(_dragScreenRect);
-            DrawGuiRect(guiRect, new Color(0f, 1f, 0f, 0.15f));
+            Rect r = new Rect(
+                _dragScreenRect.x,
+                Screen.height - _dragScreenRect.y - _dragScreenRect.height,
+                _dragScreenRect.width,
+                _dragScreenRect.height
+            );
+            GUI.Box(r, "");
         }
 
+        // Help text
         if (_showHelp)
         {
-            GUI.Label(new Rect(10, 10, 300, 100),
-                "Left-click/drag: Select\nRight-click: Move/Attack\nR: Rally mode\nESC: Clear");
+            GUILayout.BeginArea(new Rect(10, 10, 300, 200));
+            GUILayout.Label("Controls:");
+            GUILayout.Label("Left-click: Select unit");
+            GUILayout.Label("Left-drag: Box select");
+            GUILayout.Label("Right-click: Move/Attack/Gather");
+            GUILayout.Label("R: Toggle rally point mode");
+            GUILayout.Label("ESC: Clear selection");
+            if (GameSettings.IsMultiplayer)
+            {
+                GUILayout.Label($"Faction: {GameSettings.LocalPlayerFaction}");
+                GUILayout.Label("Multiplayer: Active");
+            }
+            GUILayout.EndArea();
+        }
+
+        // Rally mode indicator
+        if (_rallyMode)
+        {
+            GUI.Label(new Rect(Screen.width / 2 - 50, 10, 100, 20), "RALLY MODE");
         }
     }
+}
+
+// Helper component for entity references on GameObjects
+// If you already have this in your project with a different name, just use yours
+public class EntityReference : MonoBehaviour
+{
+    public Entity Entity;
 }

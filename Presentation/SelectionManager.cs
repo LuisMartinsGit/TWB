@@ -29,7 +29,7 @@ public class SelectionDecalManager : MonoBehaviour
 
     private Material _ringMat;
     private FogOfWarManager _fow;
-    private Faction _humanFaction = Faction.Blue;
+    private Faction _humanFaction = GameSettings.LocalPlayerFaction;
 
     void Awake()
     {

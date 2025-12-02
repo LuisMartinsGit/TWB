@@ -52,7 +52,7 @@ public static class EntityActionExtractor
         info.Type = ActionType.BuildingPlacement;
         
         // Get faction for cost checking
-        Faction faction = Faction.Blue;
+        Faction faction = GameSettings.LocalPlayerFaction;
         if (em.HasComponent<FactionTag>(entity))
             faction = em.GetComponentData<FactionTag>(entity).Value;
         
@@ -104,7 +104,7 @@ public static class EntityActionExtractor
         info.Type = ActionType.UnitTraining;
         
         // Get faction for cost checking
-        Faction faction = Faction.Blue;
+        Faction faction = GameSettings.LocalPlayerFaction;
         if (em.HasComponent<FactionTag>(entity))
             faction = em.GetComponentData<FactionTag>(entity).Value;
         
