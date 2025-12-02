@@ -5,6 +5,7 @@ using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
+using TheWaningBorder.Core;
 
 namespace TheWaningBorder.AI
 {
@@ -406,169 +407,65 @@ namespace TheWaningBorder.AI
             float3 destination, EntityCommandBuffer ecb)
         {
             var em = state.EntityManager;
-
-            int unitsPerRow = (int)math.sqrt(armyUnits.Length);
-            if (unitsPerRow < 1) unitsPerRow = 1;
-
-            int row = 0, col = 0;
-
-            for (int i = 0; i < armyUnits.Length; i++)
-            {
-                if (!em.Exists(armyUnits[i].Unit)) continue;
-
-                // ✅ Skip scouts (ArmyId == -1) just in case they ever end up in an army
-                if (em.HasComponent<ArmyTag>(armyUnits[i].Unit))
-                {
-                    var tag = em.GetComponentData<ArmyTag>(armyUnits[i].Unit);
-                    if (tag.ArmyId == -1)
-                        continue;
-                }
-
-                float3 offset = new float3(
-                    (col - unitsPerRow / 2f) * FORMATION_SPACING,
-                    0,
-                    (row - unitsPerRow / 2f) * FORMATION_SPACING
-                );
-
-                float3 targetPos = destination + offset;
-
-                ecb.SetComponent(armyUnits[i].Unit, new DesiredDestination
-                {
-                    Position = targetPos,
-                    Has = 1
-                });
-
-                col++;
-                if (col >= unitsPerRow)
-                {
-                    col = 0;
-                    row++;
-                }
-            }
+            
+            // Use the AICommandAdapter for proper multiplayer sync
+            AICommandAdapter.MoveArmy(em, armyUnits, destination, FORMATION_SPACING);
         }
 
 
-        private void EngageEnemies(ref SystemState state, AIArmy army, Faction enemyFaction,
-            DynamicBuffer<ArmyUnit> armyUnits, EntityCommandBuffer ecb)
+  private void EngageEnemies(ref SystemState state, AIArmy army, Faction enemyFaction,
+    DynamicBuffer<ArmyUnit> armyUnits, EntityCommandBuffer ecb)
+{
+    var em = state.EntityManager;
+    var targets = FindEnemyTargets(ref state, army.Position, enemyFaction, ENGAGEMENT_RANGE);
+
+    if (targets.Length == 0)
+    {
+        targets.Dispose();
+        return;
+    }
+
+    PrioritizeTargets(ref state, targets);
+
+    // Use AICommandAdapter for proper attack command routing
+    int targetIdx = 0;
+    for (int i = 0; i < armyUnits.Length; i++)
+    {
+        if (!em.Exists(armyUnits[i].Unit)) continue;
+
+        if (targetIdx < targets.Length)
         {
-            var em = state.EntityManager;
-
-            // Find and prioritize enemy targets
-            var targets = FindEnemyTargets(ref state, army.Position, enemyFaction, ENGAGEMENT_RANGE);
-
-            if (targets.Length == 0)
+            bool needsNewTarget = true;
+            
+            if (em.HasComponent<Target>(armyUnits[i].Unit))
             {
-                targets.Dispose();
-                return;
-            }
-
-            // Prioritize targets
-            PrioritizeTargets(ref state, targets);
-
-            // Assign targets to units
-            int targetIdx = 0;
-            for (int i = 0; i < armyUnits.Length; i++)
-            {
-                if (!em.Exists(armyUnits[i].Unit)) continue;
-
-                if (targetIdx < targets.Length)
+                var currentTarget = em.GetComponentData<Target>(armyUnits[i].Unit);
+                if (currentTarget.Value != Entity.Null && em.Exists(currentTarget.Value))
                 {
-                    // Check if unit needs a new target
-                    bool needsNewTarget = true;
-
-                    if (em.HasComponent<Target>(armyUnits[i].Unit))
-                    {
-                        var currentTarget = em.GetComponentData<Target>(armyUnits[i].Unit);
-
-                        // If unit already has a valid target, don't reassign
-                        if (currentTarget.Value != Entity.Null && em.Exists(currentTarget.Value))
-                        {
-                            if (em.HasComponent<Health>(currentTarget.Value))
-                            {
-                                var targetHealth = em.GetComponentData<Health>(currentTarget.Value);
-                                if (targetHealth.Value > 0)
-                                {
-                                    needsNewTarget = false;
-                                }
-                            }
-                        }
-                    }
-
-                    if (needsNewTarget)
-                    {
-                        // Assign new target
-                        ecb.SetComponent(armyUnits[i].Unit, new Target
-                        {
-                            Value = targets[targetIdx].Entity
-                        });
-                    }
-
-                    targetIdx = (targetIdx + 1) % targets.Length; // Cycle through targets
+                    needsNewTarget = false;
                 }
             }
 
-            targets.Dispose();
+            if (needsNewTarget)
+            {
+                // Route through command system for multiplayer sync
+                AICommandAdapter.IssueAttack(em, armyUnits[i].Unit, targets[targetIdx].Entity);
+            }
+
+            targetIdx = (targetIdx + 1) % targets.Length;
         }
+    }
 
-        private void HoldFormation(ref SystemState state, DynamicBuffer<ArmyUnit> armyUnits,
-            float3 position, EntityCommandBuffer ecb)
-        {
-            var em = state.EntityManager;
-
-            int unitsPerRow = (int)math.sqrt(armyUnits.Length);
-            if (unitsPerRow < 1) unitsPerRow = 1;
-
-            int row = 0, col = 0;
-
-            for (int i = 0; i < armyUnits.Length; i++)
-            {
-                if (!em.Exists(armyUnits[i].Unit)) continue;
-                
-                if (!em.Exists(armyUnits[i].Unit)) continue;
-
-                // ✅ Skip scouts (ArmyId == -1)
-                if (em.HasComponent<ArmyTag>(armyUnits[i].Unit))
-                {
-                    var tag = em.GetComponentData<ArmyTag>(armyUnits[i].Unit);
-                    if (tag.ArmyId == -1)
-                        continue;
-                }
-
-
-                float3 offset = new float3(
-                    (col - unitsPerRow / 2f) * FORMATION_SPACING,
-                    0,
-                    (row - unitsPerRow / 2f) * FORMATION_SPACING
-                );
-
-                float3 holdPos = position + offset;
-
-                // Check distance to hold position
-                if (em.HasComponent<LocalTransform>(armyUnits[i].Unit))
-                {
-                    var transform = em.GetComponentData<LocalTransform>(armyUnits[i].Unit);
-                    float dist = math.distance(transform.Position, holdPos);
-
-                    // Only move if significantly out of position
-                    if (dist > FORMATION_SPACING * 0.5f)
-                    {
-                        ecb.SetComponent(armyUnits[i].Unit, new DesiredDestination
-                        {
-                            Position = holdPos,
-                            Has = 1
-                        });
-                    }
-                }
-
-                col++;
-                if (col >= unitsPerRow)
-                {
-                    col = 0;
-                    row++;
-                }
-            }
-        }
-
+    targets.Dispose();
+}
+private void HoldFormation(ref SystemState state, DynamicBuffer<ArmyUnit> armyUnits,
+    float3 position, EntityCommandBuffer ecb)
+{
+    var em = state.EntityManager;
+    
+    // Use AICommandAdapter for proper multiplayer sync
+    AICommandAdapter.HoldFormation(em, armyUnits, position, FORMATION_SPACING, FORMATION_SPACING * 0.5f);
+}
         private NativeList<(Entity Entity, float3 Position, int Priority)> FindEnemyTargets(
             ref SystemState state, float3 position, Faction enemyFaction, float range)
         {
