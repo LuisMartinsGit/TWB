@@ -1,10 +1,13 @@
+// Components.cs - FIXED VERSION
+// Removed duplicate MissionType enum, fixed ArmyTag
 
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
 
-public enum UnitClass : byte { Melee = 0, Ranged = 1, Siege = 2 , Support = 3, Magic = 4,Economy = 5, Miner = 6, Scout = 7}
+public enum UnitClass : byte { Melee = 0, Ranged = 1, Siege = 2, Support = 3, Magic = 4, Economy = 5, Miner = 6, Scout = 7 }
+
 public enum Faction : byte
 {
     Blue = 0,  // human
@@ -16,11 +19,12 @@ public enum Faction : byte
     Teal = 6,
     White = 7
 }
+
 public struct FactionProgress : IComponentData
 {
     public byte Culture;
-
 }
+
 public static class Cultures
 {
     public const byte None = 0;
@@ -104,7 +108,7 @@ public struct ProductionState : IComponentData
 {
     public float Timer;     // time left to finish current item; <= 0 means idle
     public float BaseTime;  // base production time per unit
-    public UnitClass CurrentClass; // <-- add this line
+    public UnitClass CurrentClass;
 }
 
 public struct RallyPoint : IComponentData
@@ -118,11 +122,12 @@ public struct PresentationId : IComponentData
 {
     public int Id;
 }
+
 // Waypoints buffer for patrol paths
 public struct PatrolWaypoint : IBufferElementData
 {
     public float3 Position;
-    public float  WaitSeconds; // optional pause at this waypoint
+    public float WaitSeconds; // optional pause at this waypoint
 }
 
 // Per-unit patrol state
@@ -132,10 +137,12 @@ public struct PatrolAgent : IComponentData
     public byte Loop;    // 1 = loop, 0 = stop at end (or ping-pong if you add it later)
     public float WaitTimer; // countdown while waiting at a waypoint
 }
+
 public struct Radius : IComponentData
 {
     public float Value; // collision/spacing radius in world units
 }
+
 public struct UserMoveOrder : IComponentData { } // tag = presence only
 
 // Flash-beam visual event(s) for ranged shots.
@@ -143,7 +150,7 @@ public struct UserMoveOrder : IComponentData { } // tag = presence only
 public struct LaserFx : IBufferElementData
 {
     public Entity Target;     // who we zapped
-    public float  Lifetime;   // seconds left to draw the beam (e.g., 0.08f)
+    public float Lifetime;   // seconds left to draw the beam (e.g., 0.08f)
 }
 
 // Siege projectile flight data (ECS time/impact handled in systems).
@@ -152,11 +159,12 @@ public struct Projectile : IComponentData
     public float3 Start;
     public float3 End;        // impact point (or target position at fire time)
     public double StartTime;  // SystemAPI.Time.ElapsedTime when launched
-    public float  FlightTime; // seconds to reach End
-    public int    Damage;
+    public float FlightTime; // seconds to reach End
+    public int Damage;
     public Entity Target;     // optional: if still valid at impact, apply to this
     public Faction Faction;   // who fired (for friendly-fire rules if needed)
 }
+
 // Axis-aligned impassable box (hard no-go)
 public struct ObstacleAABB : IComponentData
 {
@@ -165,20 +173,22 @@ public struct ObstacleAABB : IComponentData
 }
 
 // Optional: visual cue (no behavior)
-public struct ObstacleTag : IComponentData {} // marker only
+public struct ObstacleTag : IComponentData { } // marker only
 
 public struct TurnSpeed : IComponentData
 {
     /// <summary>Radians per second. ~6.28 = 360°/s; ~12.56 = 720°/s.</summary>
     public float RadiansPerSecond;
 }
+
 public struct ArmorRating : IComponentData
 {
     public float Value; // e.g., 0..100+
 }
 
 // ===== Strategy layer =====
-public struct AIStrategyBudget : IComponentData {
+public struct AIStrategyBudget : IComponentData
+{
     // Fractions sum ~1.0 (soft)
     public float Economy;   // workers/outposts
     public float Research;  // tech (stub if not yet)
@@ -188,7 +198,8 @@ public struct AIStrategyBudget : IComponentData {
 }
 
 // Rolling perception snapshot (lightweight, per brain)
-public struct AIStrategyPerception : IComponentData {
+public struct AIStrategyPerception : IComponentData
+{
     public int MyArmyPower;
     public int EnemyArmyPowerNearby;
     public int KnownEnemyBases;    // from scout memory
@@ -197,41 +208,59 @@ public struct AIStrategyPerception : IComponentData {
 
 // ===== Mini-AI requests =====
 public enum AIRequestType : byte { QueueMelee, QueueRanged, QueueSiege, BuildOutpost, BuildDefense, ResearchX }
-public struct AIRequest : IBufferElementData {
+
+public struct AIRequest : IBufferElementData
+{
     public AIRequestType Type;
     public int Quantity;
     public float3 Position; // for builds/waypoints
 }
 
 // ===== Military layer & armies =====
-public enum MissionType : byte { Attack, Defend, Raid, Harass, Escort, Rally }
-public struct ArmyTag : IComponentData { public int ArmyId;
+// FIX: Removed duplicate MissionType enum - using the one in TheWaningBorder.AI namespace
 
-    public Entity ArmyEntity { get; internal set; }
+// FIX: Changed ArmyTag to use plain field instead of auto-property
+public struct ArmyTag : IComponentData
+{
+    public int ArmyId;
+    public Entity ArmyEntity;  // FIX: Was auto-property, now plain field
 }
-public struct ArmyDefinition : IComponentData {
+
+public struct ArmyDefinition : IComponentData
+{
     public int ArmyId;
     public Faction Owner;
-    public MissionType CurrentMission;
+    public TheWaningBorder.AI.MissionType CurrentMission;
     public Entity MissionEntity; // link to mission data
 }
 
-public struct MissionAttack : IComponentData {
+public struct MissionAttack : IComponentData
+{
     public float3 TargetPos;
     public Entity PrimaryTarget; // base/unit if known
 }
-public struct MissionDefend : IComponentData { public float3 AreaCenter; public float Radius; }
-public struct MissionScout : IComponentData { public float3 TargetPos; }
+
+public struct MissionDefend : IComponentData
+{
+    public float3 AreaCenter;
+    public float Radius;
+}
+
+public struct MissionScout : IComponentData
+{
+    public float3 TargetPos;
+}
 
 // ===== Scout memory =====
-public struct ScoutIntel : IBufferElementData {
+public struct ScoutIntel : IBufferElementData
+{
     public float3 Pos;
     public float LastSeenTime;
-    public byte  IsEnemyBase; // 0/1
+    public byte IsEnemyBase; // 0/1
 }
 
 // Optional: heatmap over FoW cells (kept sparse)
-// Instead of a big grid, store “frontier” cells to visit next:
+// Instead of a big grid, store "frontier" cells to visit next:
 public struct ExploreFrontier : IBufferElementData
 {
     public float3 WorldPos;
@@ -243,9 +272,9 @@ public enum CrystalSubNodeType : byte
     Resource, Enforcer, Repair, Turret, Nexus, Ward, Storm, Obelisk
 }
 
-public struct CrystalTag : IComponentData {}                // mark crystal units/buildings
-public struct CursedGroundTag : IComponentData {}           // attach to ground/tiles if you instantiate blockers
-public struct CrystalMainNodeTag : IComponentData {}        // identify main hives
+public struct CrystalTag : IComponentData { }                // mark crystal units/buildings
+public struct CursedGroundTag : IComponentData { }           // attach to ground/tiles if you instantiate blockers
+public struct CrystalMainNodeTag : IComponentData { }        // identify main hives
 public struct CrystalSubNodeTag : IComponentData { public CrystalSubNodeType Type; }
 
 /// <summary>Attached to any Crystal node (main or sub) that spreads the curse.</summary>
@@ -310,14 +339,16 @@ public struct CrystalLatticeMember : IComponentData
 /// <summary>Ultimate toggles at L5.</summary>
 public struct CrystalUltimateState : IComponentData
 {
-    public byte EmbraceActive;  // 1 if Crystal’s Embrace currently running
+    public byte EmbraceActive;  // 1 if Crystal's Embrace currently running
     public float EmbraceTimer;
     public byte TamingProtocolReady;
 }
+
 public struct MinAttackRange : IComponentData
 {
     public float Value;
 }
+
 public struct LineOfSight : IComponentData
 {
     public float Radius;
@@ -325,9 +356,7 @@ public struct LineOfSight : IComponentData
 
 public struct GathererHutTag : IComponentData { }
 public struct HutTag : IComponentData { }
-
 public struct TempleTag : IComponentData { }
-
 public struct VaultTag : IComponentData { }
 
 public struct FactionResources : IComponentData
@@ -351,7 +380,7 @@ public struct SuppliesIncome : IComponentData
     public int PerMinute; // e.g., 180
 }
 
-public struct BarracksTag : IComponentData {}
+public struct BarracksTag : IComponentData { }
 
 public struct TrainingState : IComponentData
 {
@@ -369,11 +398,13 @@ public struct GuardPoint : IComponentData
     public float3 Position;
     public byte Has; // 0/1
 }
+
 public struct ArrowLanded : IComponentData
 {
     public float TimeLeft; // seconds
 }
 
+/// <summary>
 /// Population tracking for a faction. Current = used slots, Max = available slots (capped at 200).
 /// Add this to the faction's resource bank entity alongside FactionResources.
 /// </summary>
@@ -381,10 +412,10 @@ public struct FactionPopulation : IComponentData
 {
     /// <summary>How many population slots are currently used by units</summary>
     public int Current;
-    
+
     /// <summary>Maximum population available from buildings (capped at AbsoluteMax)</summary>
     public int Max;
-    
+
     /// <summary>Hard cap on population - cannot exceed this value</summary>
     public const int AbsoluteMax = 200;
 }
@@ -408,11 +439,50 @@ public struct PopulationCost : IComponentData
     /// <summary>How many population slots this unit consumes</summary>
     public int Amount;
 }
-// AIComponents.cs
+
+// ==================== Command Components ====================
+// These components represent player/AI commands to units
+
+/// <summary>
+/// Command to build a structure at a specific position.
+/// </summary>
+public struct BuildCommand : IComponentData
+{
+    public FixedString64Bytes BuildingId;
+    public float3 Position;
+    public Entity TargetBuilding; // The building being constructed (Entity.Null if not yet built)
+}
+
+/// <summary>
+/// Command to gather from a resource node (e.g., Iron Mine).
+/// </summary>
+public struct GatherCommand : IComponentData
+{
+    public Entity ResourceNode;
+    public Entity DepositLocation; // Where to return resources (e.g., GatherersHut)
+}
+
+/// <summary>
+/// Command to heal a friendly unit.
+/// </summary>
+public struct HealCommand : IComponentData
+{
+    public Entity Target;
+}
+
+public struct MiningTarget : IComponentData
+{
+    public Entity Mine;
+    public float3 TargetPosition;
+}
+
+// ==================== AI Components ====================
 // Core components for AI system
 
 namespace TheWaningBorder.AI
 {
+    public struct IronMineTag : IComponentData { }   // tag component
+
     // ==================== AI Brain ====================
 
     /// <summary>
@@ -532,14 +602,6 @@ namespace TheWaningBorder.AI
         public float MapExplorationPercent; // 0-100
     }
 
-    // public struct ScoutAssignment : IBufferElementData
-    // {
-    //     public Entity ScoutUnit;
-    //     public float3 TargetArea;
-    //     public byte IsActive; // 0/1
-    //     public float LastReportTime;
-    // }
-
     public struct EnemySighting : IBufferElementData
     {
         public Faction EnemyFaction;
@@ -560,6 +622,7 @@ namespace TheWaningBorder.AI
         public float MissionUpdateInterval;
     }
 
+    // FIX: This is the ONLY MissionType enum - removed the duplicate in the global scope
     public enum MissionType : byte
     {
         Attack = 0,
@@ -623,7 +686,7 @@ namespace TheWaningBorder.AI
         public byte IsInCombat; // 0/1
         public float LastCombatTime;
 
-        public int UnitCount { get; internal set; }
+        public int UnitCount;
     }
 
     public struct ArmyUnit : IBufferElementData
@@ -668,49 +731,7 @@ namespace TheWaningBorder.AI
         public int OwnMilitaryStrength;
         public int OwnEconomicStrength; // Resources per minute
 
-        public int EnemyBasesSpotted { get; internal set; }
-        public int EnemyArmiesSpotted { get; internal set; }
+        public int EnemyBasesSpotted;
+        public int EnemyArmiesSpotted;
     }
-}
-
-
-public struct MiningTarget : IComponentData
-{
-    public Entity Mine;
-    public float3 TargetPosition;
-}
-
-// ==================== Command Components ====================
-// These components represent player/AI commands to units
-
-/// <summary>
-/// Command to build a structure at a specific position.
-/// </summary>
-public struct BuildCommand : IComponentData
-{
-    public FixedString64Bytes BuildingId;
-    public float3 Position;
-    public Entity TargetBuilding; // The building being constructed (Entity.Null if not yet built)
-}
-
-/// <summary>
-/// Command to gather from a resource node (e.g., Iron Mine).
-/// </summary>
-public struct GatherCommand : IComponentData
-{
-    public Entity ResourceNode;
-    public Entity DepositLocation; // Where to return resources (e.g., GatherersHut)
-}
-
-/// <summary>
-/// Command to heal a friendly unit.
-/// </summary>
-public struct HealCommand : IComponentData
-{
-    public Entity Target;
-}
-
-namespace TheWaningBorder.AI
-{
-    public struct IronMineTag : IComponentData {}   // tag component
 }

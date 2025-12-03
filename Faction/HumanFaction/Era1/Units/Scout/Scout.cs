@@ -1,6 +1,7 @@
-// Swordsman.cs - WITH RADIUS COMPONENT
+// Scout.cs - FIXED VERSION
+// FIX: Corrected comment header (was saying "Swordsman.cs")
 // Creates entity with Radius for collision/spacing
-// Replace your Swordsman.cs with this
+// Fast reconnaissance unit that reveals fog of war
 
 using Unity.Entities;
 using Unity.Mathematics;
@@ -36,10 +37,10 @@ namespace TheWaningBorder.Humans
             em.SetComponentData(e, new Damage { Value = 1 });
             em.SetComponentData(e, new LineOfSight { Radius = 1f });
             em.SetComponentData(e, new Target { Value = Entity.Null });
-            
+
             // Radius for collision/spacing
             em.SetComponentData(e, new Radius { Value = 0.5f });
-            
+
             return e;
         }
     }
