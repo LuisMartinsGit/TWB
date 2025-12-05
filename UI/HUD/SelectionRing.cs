@@ -6,6 +6,7 @@ using UnityEngine;
 using Unity.Entities;
 using Unity.Transforms;
 using TheWaningBorder.World.FogOfWar;
+using EntityWorld = Unity.Entities.World;
 
 namespace TheWaningBorder.UI.HUD
 {
@@ -29,7 +30,7 @@ namespace TheWaningBorder.UI.HUD
         [Tooltip("Alpha used for hover rings. RGB comes from FactionColors.")]
         public Color HoverEnemyColor = new Color(1f, 0.25f, 0.25f, 0.85f);
 
-        private World _world;
+        private EntityWorld _world;
         private EntityManager _em;
 
         private readonly Dictionary<Entity, GameObject> _rings = new();
@@ -42,7 +43,7 @@ namespace TheWaningBorder.UI.HUD
 
         void Awake()
         {
-            _world = World.DefaultGameObjectInjectionWorld;
+            _world = EntityWorld.DefaultGameObjectInjectionWorld;
             if (_world != null && _world.IsCreated) _em = _world.EntityManager;
 
             _ringMat = MakeRingMaterial();
@@ -55,7 +56,7 @@ namespace TheWaningBorder.UI.HUD
         {
             if (_em.Equals(default(EntityManager)))
             {
-                _world = World.DefaultGameObjectInjectionWorld;
+                _world = EntityWorld.DefaultGameObjectInjectionWorld;
                 if (_world != null && _world.IsCreated) _em = _world.EntityManager;
             }
             if (_world == null || !_world.IsCreated) return;

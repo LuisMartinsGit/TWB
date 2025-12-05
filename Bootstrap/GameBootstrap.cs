@@ -10,6 +10,7 @@ using TheWaningBorder.AI;
 using TheWaningBorder.UI;
 using TheWaningBorder.Economy;
 using TheWaningBorder.Data;
+using TheWaningBorder.Core.Config;
 
 namespace TheWaningBorder.Bootstrap
 {
@@ -84,32 +85,19 @@ namespace TheWaningBorder.Bootstrap
                 return;
             }
 
-            // Try to load from Resources
-            TextAsset json = null;
-            string[] possiblePaths = 
+            // TechTreeDB is a MonoBehaviour - create it if it doesn't exist
+            var existing = Object.FindFirstObjectByType<TechTreeDB>();
+            if (existing != null)
             {
-                "TechTree",           // Resources/TechTree.json
-                "Data/TechTree",      // Resources/Data/TechTree.json
-                "Config/TechTree",    // Resources/Config/TechTree.json
-            };
-
-            foreach (var path in possiblePaths)
-            {
-                json = Resources.Load<TextAsset>(path);
-                if (json != null)
-                {
-                    Debug.Log($"[GameBootstrap] Loaded TechTree from Resources/{path}");
-                    break;
-                }
-            }
-
-            if (json == null)
-            {
-                Debug.LogError("[GameBootstrap] Could not find TechTree.json in Resources!");
+                Debug.Log("[GameBootstrap] Found existing TechTreeDB");
                 return;
             }
 
-            TechTreeDB.Initialize(json.text);
+            // Create TechTreeDB GameObject - it will auto-load from Resources in Start()
+            var techTreeGO = new GameObject("TechTreeDB");
+            techTreeGO.AddComponent<TechTreeDB>();
+            Object.DontDestroyOnLoad(techTreeGO);
+            Debug.Log("[GameBootstrap] Created TechTreeDB (will auto-load from Resources)");
         }
 
         // ═══════════════════════════════════════════════════════════════
@@ -154,14 +142,12 @@ namespace TheWaningBorder.Bootstrap
 
         private static void InitializeFactions()
         {
-            // Initialize economy for each faction based on LobbyConfig
             for (int i = 0; i < GameSettings.TotalPlayers; i++)
             {
-                var config = LobbyConfig.GetSlot(i);
-                if (config != null && config.IsOccupied)
+                var slot = LobbyConfig.Slots[i];
+                if (slot != null && slot.Type != SlotType.Empty)  // Changed from IsOccupied
                 {
-                    // EconomyManager.InitializeFaction(config.Faction);
-                    Debug.Log($"[GameBootstrap] Initialized faction {config.Faction}");
+                    Debug.Log($"[GameBootstrap] Initialized faction {slot.Faction}");
                 }
             }
         }
@@ -172,15 +158,13 @@ namespace TheWaningBorder.Bootstrap
 
         private static void InitializeAI()
         {
-            // Initialize AI for non-human players
             for (int i = 0; i < GameSettings.TotalPlayers; i++)
             {
-                var config = LobbyConfig.GetSlot(i);
-                if (config != null && config.IsOccupied && !config.IsHuman)
+                var slot = LobbyConfig.Slots[i];
+                if (slot != null && slot.Type == SlotType.AI)  // Changed from IsOccupied && !IsHuman
                 {
-                    // AIBootstrap.InitializeForFaction(config.Faction, config.AIDifficulty, config.AIPersonality);
-                    Debug.Log($"[GameBootstrap] AI initialized for faction {config.Faction} " +
-                              $"(Difficulty: {config.AIDifficulty}, Personality: {config.AIPersonality})");
+                    Debug.Log($"[GameBootstrap] AI initialized for faction {slot.Faction} " +
+                              $"(Difficulty: {slot.AIDifficulty})");
                 }
             }
         }

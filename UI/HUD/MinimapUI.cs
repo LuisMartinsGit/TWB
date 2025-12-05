@@ -10,6 +10,8 @@ using Unity.Collections;
 using UnityEngine.EventSystems;
 using TheWaningBorder.Input;
 using TheWaningBorder.World.FogOfWar;
+using EntityWorld = Unity.Entities.World;
+
 namespace TheWaningBorder.UI.HUD
 {
     /// <summary>
@@ -64,7 +66,7 @@ namespace TheWaningBorder.UI.HUD
         private Color[] _frame;
 
         // ECS
-        private World _world;
+        private EntityWorld _world;
         private EntityManager _em;
         private EntityQuery _unitsQ;
         private EntityQuery _buildingsQ;
@@ -95,7 +97,7 @@ namespace TheWaningBorder.UI.HUD
 
         void Start()
         {
-            _world = World.DefaultGameObjectInjectionWorld;
+            var _world = EntityWorld.DefaultGameObjectInjectionWorld;
             if (_world != null && _world.IsCreated)
             {
                 _em = _world.EntityManager;

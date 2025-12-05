@@ -7,6 +7,7 @@ using Unity.Mathematics;
 using Unity.Transforms;
 using TheWaningBorder.Economy;
 using TheWaningBorder.Entities;
+using EntityWorld = Unity.Entities.World;
 
 namespace TheWaningBorder.UI.Panels
 {
@@ -22,7 +23,7 @@ namespace TheWaningBorder.UI.Panels
         public static bool IsPlacingBuilding;
         public static bool SuppressClicksThisFrame;
 
-        private World _world;
+        private EntityWorld _world;
         private EntityManager _em;
 
         [Header("Placement")]
@@ -51,7 +52,7 @@ namespace TheWaningBorder.UI.Panels
 
         void Awake()
         {
-            _world = World.DefaultGameObjectInjectionWorld;
+            _world = EntityWorld.DefaultGameObjectInjectionWorld;
             _padding = new RectOffset(10, 10, 10, 10);
 
             // Load preview prefabs
@@ -173,7 +174,7 @@ namespace TheWaningBorder.UI.Panels
 
         private void SpawnSelectedBuilding(float3 pos)
         {
-            _em = (_world ?? World.DefaultGameObjectInjectionWorld).EntityManager;
+            _em = (_world ?? EntityWorld.DefaultGameObjectInjectionWorld).EntityManager;
 
             var fac = GetSelectedFactionOrDefault();
 

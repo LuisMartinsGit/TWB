@@ -7,6 +7,7 @@ using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using UnityEngine;
+using EntityWorld = Unity.Entities.World;
 
 namespace TheWaningBorder.UI.HUD
 {
@@ -26,7 +27,7 @@ namespace TheWaningBorder.UI.HUD
         /// <summary>Returns true if the mouse is over the top resource bar.</summary>
         public static bool IsPointerOverTopBar { get; private set; }
 
-        private World _world;
+        private EntityWorld _world;
         private EntityManager _em;
         private EntityQuery _banksQuery;
         private EntityQuery _populationQuery;
@@ -44,7 +45,7 @@ namespace TheWaningBorder.UI.HUD
 
         private void Awake()
         {
-            _world = World.DefaultGameObjectInjectionWorld;
+            _world = EntityWorld.DefaultGameObjectInjectionWorld;
             if (_world == null) return;
 
             _em = _world.EntityManager;
@@ -146,7 +147,7 @@ namespace TheWaningBorder.UI.HUD
                 if (factionCount >= 8) break;
             }
 
-            IsPointerOverTopBar = Input.mousePosition.y >= Screen.height - (topBarHeight + 4f) * factionCount;
+            IsPointerOverTopBar = RTSInput.mousePosition.y >= Screen.height - (topBarHeight + 4f) * factionCount;
         }
 
         private void DrawFactionBar(Faction faction, float yOffset)

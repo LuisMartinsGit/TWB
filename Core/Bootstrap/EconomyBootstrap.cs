@@ -25,16 +25,16 @@ namespace TheWaningBorder.Economy
 
         /// <summary>Starting supplies for each faction</summary>
         public const int StartingSupplies = 400;
-        
+
         /// <summary>Starting iron for each faction</summary>
         public const int StartingIron = 150;
-        
+
         /// <summary>Starting crystal (advanced resource)</summary>
         public const int StartingCrystal = 0;
-        
+
         /// <summary>Starting veilsteel (advanced resource)</summary>
         public const int StartingVeilsteel = 0;
-        
+
         /// <summary>Starting glow (advanced resource)</summary>
         public const int StartingGlow = 0;
 
@@ -49,7 +49,7 @@ namespace TheWaningBorder.Economy
         /// <param name="totalPlayers">Number of factions to initialize</param>
         public static void EnsureFactionBanks(int totalPlayers)
         {
-            EntityWorld world = EntityWorld.DefaultGameObjectInjectionWorld;
+            Unity.Entities.World world = Unity.Entities.World.DefaultGameObjectInjectionWorld;
             if (world == null || !world.IsCreated)
             {
                 Debug.LogError("[EconomyBootstrap] No valid World exists!");
@@ -80,8 +80,9 @@ namespace TheWaningBorder.Economy
         public static Entity CreateFactionBank(EntityManager em, Faction faction,
             int supplies, int iron, int crystal = 0, int veilsteel = 0, int glow = 0)
         {
-            var world = World.DefaultGameObjectInjectionWorld;
-            
+            // In ResetAllFactionBanks and the public CreateFactionBank overload:
+            var world = EntityWorld.DefaultGameObjectInjectionWorld;  // Not World.DefaultGameObjectInjectionWorld
+
             var bank = em.CreateEntity(
                 typeof(FactionTag),
                 typeof(FactionResources),
@@ -90,7 +91,7 @@ namespace TheWaningBorder.Economy
             );
 
             em.SetComponentData(bank, new FactionTag { Value = faction });
-            
+
             em.SetComponentData(bank, new FactionResources
             {
                 Supplies = supplies,
@@ -108,8 +109,8 @@ namespace TheWaningBorder.Economy
 
             em.SetComponentData(bank, new ResourceTickState
             {
-                LastWholeSecond = world != null 
-                    ? (int)math.floor(world.Time.ElapsedTime) 
+                LastWholeSecond = world != null
+                    ? (int)math.floor(world.Time.ElapsedTime)
                     : 0
             });
 
@@ -149,7 +150,8 @@ namespace TheWaningBorder.Economy
         /// </summary>
         public static void ResetAllFactionBanks(int totalPlayers)
         {
-            var world = World.DefaultGameObjectInjectionWorld;
+            // In ResetAllFactionBanks and the public CreateFactionBank overload:
+            var world = EntityWorld.DefaultGameObjectInjectionWorld;  // Not World.DefaultGameObjectInjectionWorld
             if (world == null) return;
 
             var em = world.EntityManager;
@@ -157,7 +159,7 @@ namespace TheWaningBorder.Economy
             for (int i = 0; i < totalPlayers; i++)
             {
                 var faction = (Faction)i;
-                
+
                 if (TryGetFactionBank(em, faction, out var bank))
                 {
                     em.SetComponentData(bank, new FactionResources
@@ -192,7 +194,7 @@ namespace TheWaningBorder.Economy
             );
 
             using var banks = query.ToEntityArray(Allocator.Temp);
-            
+
             for (int i = 0; i < banks.Length; i++)
             {
                 var tag = em.GetComponentData<FactionTag>(banks[i]);
@@ -202,7 +204,8 @@ namespace TheWaningBorder.Economy
             return false;
         }
 
-        private static Entity CreateFactionBank(EntityManager em, Faction faction, World world)
+        // Then fix the method signature (around line 205):
+        private static Entity CreateFactionBank(EntityManager em, Faction faction, EntityWorld world)
         {
             var bank = em.CreateEntity(
                 typeof(FactionTag),
@@ -212,7 +215,7 @@ namespace TheWaningBorder.Economy
             );
 
             em.SetComponentData(bank, new FactionTag { Value = faction });
-            
+
             em.SetComponentData(bank, new FactionResources
             {
                 Supplies = StartingSupplies,
@@ -235,5 +238,6 @@ namespace TheWaningBorder.Economy
 
             return bank;
         }
+
     }
 }

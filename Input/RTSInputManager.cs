@@ -10,6 +10,8 @@ using Unity.Transforms;
 using Unity.Collections;
 using TheWaningBorder.Core;
 using TheWaningBorder.Core.Commands;     // ← ADD: for CommandRouter
+using EntityWorld = Unity.Entities.World;
+
 namespace TheWaningBorder.Input
 {
     /// <summary>
@@ -41,7 +43,7 @@ namespace TheWaningBorder.Input
         // STATE
         // ═══════════════════════════════════════════════════════════════════════
         
-        private World _world;
+        private EntityWorld _world;
         private EntityManager _em;
         private bool _rallyMode = false;
         
@@ -56,7 +58,7 @@ namespace TheWaningBorder.Input
         
         void Awake()
         {
-            _world = World.DefaultGameObjectInjectionWorld;
+            _world = EntityWorld.DefaultGameObjectInjectionWorld;
             if (_world != null && _world.IsCreated)
                 _em = _world.EntityManager;
         }

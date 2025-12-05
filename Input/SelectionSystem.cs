@@ -8,6 +8,7 @@ using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
 using Unity.Collections;
+using EntityWorld = Unity.Entities.World;
 
 namespace TheWaningBorder.Input
 {
@@ -79,7 +80,7 @@ namespace TheWaningBorder.Input
         // STATE
         // ═══════════════════════════════════════════════════════════════════════
         
-        private World _world;
+        private EntityWorld _world;
         private EntityManager _em;
         private readonly List<Entity> _selection = new();
         
@@ -100,7 +101,7 @@ namespace TheWaningBorder.Input
         {
             _instance = this;
             
-            _world = World.DefaultGameObjectInjectionWorld;
+            _world = EntityWorld.DefaultGameObjectInjectionWorld;
             if (_world != null && _world.IsCreated)
                 _em = _world.EntityManager;
             

@@ -3,6 +3,7 @@
 
 using UnityEngine;
 using Unity.Entities;
+using EntityWorld = Unity.Entities.World;
 
 namespace TheWaningBorder.UI.Common
 {
@@ -175,7 +176,7 @@ namespace TheWaningBorder.UI.Common
     {
         private static UnifiedUIManager _instance;
 
-        private World _world;
+        private EntityWorld _world;
         private EntityManager _em;
 
         void Awake()
@@ -187,7 +188,7 @@ namespace TheWaningBorder.UI.Common
             }
             _instance = this;
 
-            _world = World.DefaultGameObjectInjectionWorld;
+            _world = EntityWorld.DefaultGameObjectInjectionWorld;
             if (_world != null && _world.IsCreated)
                 _em = _world.EntityManager;
 
@@ -200,7 +201,7 @@ namespace TheWaningBorder.UI.Common
         {
             if (_em.Equals(default(EntityManager)))
             {
-                _world = World.DefaultGameObjectInjectionWorld;
+                _world = EntityWorld.DefaultGameObjectInjectionWorld;
                 if (_world != null && _world.IsCreated)
                     _em = _world.EntityManager;
             }
@@ -249,7 +250,7 @@ namespace TheWaningBorder.UI.Common
             if (_instance != null && !_instance._em.Equals(default(EntityManager)))
                 return _instance._em;
 
-            var world = World.DefaultGameObjectInjectionWorld;
+            var world = EntityWorld.DefaultGameObjectInjectionWorld;
             if (world != null && world.IsCreated)
                 return world.EntityManager;
 

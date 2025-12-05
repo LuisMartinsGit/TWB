@@ -15,26 +15,26 @@ namespace TheWaningBorder.AI
     /// Represents a zone on the map for AI exploration tracking.
     /// Used by AIScoutingBehavior to track explored/unexplored areas.
     /// </summary>
-    public struct ExplorationZone : IComponentData
+    public struct ExplorationZone : IBufferElementData  
     {
         /// <summary>Center position of this exploration zone</summary>
         public float3 Position;
-        
+
         /// <summary>Radius of the zone</summary>
         public float Radius;
-        
+
         /// <summary>Last time this zone was scouted (game time)</summary>
         public float LastExploredTime;
-        
+
         /// <summary>Priority for exploration (higher = more important)</summary>
         public int Priority;
-        
+
         /// <summary>Whether this zone has been explored at least once</summary>
         public byte IsExplored; // 0 = unexplored, 1 = explored
-        
+
         /// <summary>Whether enemy presence was detected in this zone</summary>
         public byte HasEnemyPresence; // 0 = no, 1 = yes
-        
+
         /// <summary>Faction that owns this exploration zone data</summary>
         public Faction Owner;
     }
@@ -42,7 +42,7 @@ namespace TheWaningBorder.AI
     /// <summary>
     /// Buffer element for storing multiple exploration zones per AI brain.
     /// </summary>
-    public struct ExplorationZoneBuffer : IBufferElementData
+    public struct ExplorationZoneBuffer : IBufferElementData  
     {
         public float3 Position;
         public float Radius;
@@ -64,13 +64,13 @@ namespace TheWaningBorder.AI
     {
         /// <summary>Base combat power value</summary>
         public int Value;
-        
+
         /// <summary>Offensive strength (attack capability)</summary>
         public int OffensivePower;
-        
+
         /// <summary>Defensive strength (survivability)</summary>
         public int DefensivePower;
-        
+
         /// <summary>Threat level this unit poses (for targeting priority)</summary>
         public float ThreatLevel;
     }
@@ -96,16 +96,16 @@ namespace TheWaningBorder.AI
     {
         /// <summary>Number of active scouts</summary>
         public int ActiveScouts;
-        
+
         /// <summary>Target number of scouts to maintain</summary>
         public int DesiredScouts;
-        
+
         /// <summary>Last time scouting priorities were updated</summary>
         public float LastPriorityUpdate;
-        
+
         /// <summary>Update interval for scouting priorities</summary>
         public float PriorityUpdateInterval;
-        
+
         /// <summary>Zones that need exploration</summary>
         public int UnexploredZoneCount;
     }
@@ -113,15 +113,40 @@ namespace TheWaningBorder.AI
     /// <summary>
     /// Tag component marking a unit as assigned to scouting duty.
     /// </summary>
-    public struct ScoutAssignment : IComponentData
+    public struct ScoutAssignment : IBufferElementData  
     {
         /// <summary>Target zone to scout</summary>
         public float3 TargetZone;
-        
+
         /// <summary>Time when this assignment was given</summary>
         public float AssignedTime;
-        
+
         /// <summary>Priority of this scouting mission</summary>
         public int Priority;
+    }
+    // ═══════════════════════════════════════════════════════════════════════
+    // ENEMY SIGHTING
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Buffer element for tracking enemy sightings by AI scouts.
+    /// Used to build tactical awareness of enemy positions and strength.
+    /// </summary>
+    public struct EnemySighting : IBufferElementData
+    {
+        /// <summary>Which faction was spotted</summary>
+        public Faction EnemyFaction;
+
+        /// <summary>Where the enemy was seen</summary>
+        public float3 Position;
+
+        /// <summary>Game time when sighting occurred</summary>
+        public double TimeStamp;
+
+        /// <summary>Estimated combat strength at this position</summary>
+        public int EstimatedStrength;
+
+        /// <summary>1 if this is a base/building, 0 if units</summary>
+        public byte IsBase;
     }
 }

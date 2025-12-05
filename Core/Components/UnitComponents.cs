@@ -131,4 +131,5 @@ public struct PopulationCost : IComponentData
 public struct ArmyTag : IComponentData
 {
     public int ArmyId;
+    public Entity ArmyEntity;  // Add this field
 }
