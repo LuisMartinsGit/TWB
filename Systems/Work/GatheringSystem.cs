@@ -1,11 +1,8 @@
 // File: Assets/Scripts/Systems/Work/GatheringSystem.cs
 using Unity.Burst;
-using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
-using TheWaningBorder.Humans;
-using TheWaningBorder.Economy;
 
 namespace TheWaningBorder.Systems.Work
 {

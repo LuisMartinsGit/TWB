@@ -28,6 +28,7 @@ namespace TheWaningBorder.Data
         public string damageType;       // e.g., "melee", "ranged", "siege", "magic"
         public string armorType;        // e.g., "infantry", "cavalry", "structure_human"
         public DefenseBlock defense;
+        public float attackCooldown;
         
         // ==================== Range & Vision ====================
         public float attackRange;

@@ -9,7 +9,7 @@ using Unity.Mathematics;
 using Unity.Transforms;
 using Unity.Collections;
 using TheWaningBorder.Core;
-
+using TheWaningBorder.Core.Commands;     // ← ADD: for CommandRouter
 namespace TheWaningBorder.Input
 {
     /// <summary>

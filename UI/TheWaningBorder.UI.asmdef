@@ -4,9 +4,8 @@
     "references": [
         "TheWaningBorder.Core",
         "TheWaningBorder.Data",
+        "TheWaningBorder.Entities",
         "TheWaningBorder.Economy",
-        "TheWaningBorder.Input",
-        "TheWaningBorder.World",
         "Unity.Entities",
         "Unity.Transforms",
         "Unity.Mathematics",

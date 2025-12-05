@@ -5,6 +5,7 @@ using UnityEngine;
 using Unity.Entities;
 using Unity.Collections;
 using TheWaningBorder.Economy;
+using TheWaningBorder.UI;
 
 namespace TheWaningBorder.UI.Panels
 {

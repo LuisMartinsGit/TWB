@@ -3,6 +3,7 @@
 
 using UnityEngine;
 using Unity.Entities;
+using TheWaningBorder.UI;
 
 namespace TheWaningBorder.UI.Panels
 {

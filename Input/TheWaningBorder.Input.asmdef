@@ -1,7 +1,18 @@
 {
     "name": "TheWaningBorder.Input",
     "rootNamespace": "TheWaningBorder.Input",
-    "references": ["TheWaningBorder.Core", "Unity.Entities", "Unity.Transforms", "Unity.Mathematics", "Unity.Collections"],
+    "references": [
+        "TheWaningBorder.Core",
+        "TheWaningBorder.Data",
+        "TheWaningBorder.Entities",
+        "TheWaningBorder.Economy",
+        "TheWaningBorder.UI",
+        "TheWaningBorder.AI",
+        "Unity.Entities",
+        "Unity.Transforms",
+        "Unity.Mathematics",
+        "Unity.Collections"
+    ],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,

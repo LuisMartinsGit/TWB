@@ -1,4 +1,4 @@
-// File: Assets/Scripts/Entities/Buildings/Hut.cs
+// File: Assets/Scripts/Entities/Buildings/GatherersHut.cs
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
@@ -6,21 +6,22 @@ using Unity.Transforms;
 namespace TheWaningBorder.Entities
 {
     /// <summary>
-    /// Hut building - housing structure.
-    /// Provides population capacity and generates Supplies.
+    /// GatherersHut building - resource dropoff point.
+    /// Miners deposit gathered resources here.
+    /// Also generates passive Supplies income.
     /// </summary>
-    public static class Hut
+    public static class GatherersHut
     {
         // Default stats (used if TechTreeDB unavailable)
-        private const float DefaultHP = 600f;
-        private const float DefaultLoS = 14f;
-        private const float DefaultRadius = 1.6f;
-        private const int DefaultSuppliesPerMinute = 180;
-        private const int DefaultPopulation = 10;
-        private const int PresentationID = 102;
+        private const float DefaultHP = 800f;
+        private const float DefaultLoS = 16f;
+        private const float DefaultRadius = 2.0f;
+        private const int DefaultSuppliesPerMinute = 120;
+        private const float DefaultBuildTime = 25f;
+        private const int PresentationID = 101;
 
         /// <summary>
-        /// Create Hut using EntityManager.
+        /// Create GatherersHut using EntityManager.
         /// </summary>
         public static Entity Create(EntityManager em, float3 position, Faction faction)
         {
@@ -28,8 +29,9 @@ namespace TheWaningBorder.Entities
             float hp = DefaultHP;
             float los = DefaultLoS;
             float radius = DefaultRadius;
+            int suppliesPerMin = DefaultSuppliesPerMinute;
 
-            if (TechTreeDB.Instance != null && TechTreeDB.Instance.TryGetBuilding("Hut", out var def))
+            if (TechTreeDB.Instance != null && TechTreeDB.Instance.TryGetBuilding("GatherersHut", out var def))
             {
                 if (def.hp > 0) hp = def.hp;
                 if (def.lineOfSight > 0) los = def.lineOfSight;
@@ -41,12 +43,11 @@ namespace TheWaningBorder.Entities
                 typeof(LocalTransform),
                 typeof(FactionTag),
                 typeof(BuildingTag),
-                typeof(HutTag),
+                typeof(GathererHutTag),
                 typeof(Health),
                 typeof(LineOfSight),
                 typeof(Radius),
-                typeof(SuppliesIncome),
-                typeof(PopulationProvider)
+                typeof(SuppliesIncome)
             );
 
             em.SetComponentData(entity, new PresentationId { Id = PresentationID });
@@ -56,14 +57,13 @@ namespace TheWaningBorder.Entities
             em.SetComponentData(entity, new Health { Value = (int)hp, Max = (int)hp });
             em.SetComponentData(entity, new LineOfSight { Radius = los });
             em.SetComponentData(entity, new Radius { Value = radius });
-            em.SetComponentData(entity, new SuppliesIncome { PerMinute = DefaultSuppliesPerMinute });
-            em.SetComponentData(entity, new PopulationProvider { Amount = DefaultPopulation });
+            em.SetComponentData(entity, new SuppliesIncome { PerMinute = suppliesPerMin });
 
             return entity;
         }
 
         /// <summary>
-        /// Create Hut using EntityCommandBuffer for deferred creation.
+        /// Create GatherersHut using EntityCommandBuffer for deferred creation.
         /// </summary>
         public static Entity Create(EntityCommandBuffer ecb, float3 position, Faction faction)
         {
@@ -71,8 +71,9 @@ namespace TheWaningBorder.Entities
             float hp = DefaultHP;
             float los = DefaultLoS;
             float radius = DefaultRadius;
+            int suppliesPerMin = DefaultSuppliesPerMinute;
 
-            if (TechTreeDB.Instance != null && TechTreeDB.Instance.TryGetBuilding("Hut", out var def))
+            if (TechTreeDB.Instance != null && TechTreeDB.Instance.TryGetBuilding("GatherersHut", out var def))
             {
                 if (def.hp > 0) hp = def.hp;
                 if (def.lineOfSight > 0) los = def.lineOfSight;
@@ -85,19 +86,48 @@ namespace TheWaningBorder.Entities
             ecb.AddComponent(entity, LocalTransform.FromPositionRotationScale(position, quaternion.identity, 1f));
             ecb.AddComponent(entity, new FactionTag { Value = faction });
             ecb.AddComponent(entity, new BuildingTag { IsBase = 0 });
-            ecb.AddComponent<HutTag>(entity);
+            ecb.AddComponent(entity, new GathererHutTag());
             ecb.AddComponent(entity, new Health { Value = (int)hp, Max = (int)hp });
             ecb.AddComponent(entity, new LineOfSight { Radius = los });
             ecb.AddComponent(entity, new Radius { Value = radius });
-            ecb.AddComponent(entity, new SuppliesIncome { PerMinute = DefaultSuppliesPerMinute });
-            ecb.AddComponent(entity, new PopulationProvider { Amount = DefaultPopulation });
+            ecb.AddComponent(entity, new SuppliesIncome { PerMinute = suppliesPerMin });
+
+            return entity;
+        }
+
+        /// <summary>
+        /// Create GatherersHut under construction using EntityCommandBuffer.
+        /// </summary>
+        public static Entity CreateUnderConstruction(EntityCommandBuffer ecb, float3 position, Faction faction)
+        {
+            // Load stats from TechTreeDB
+            float hp = DefaultHP;
+            float los = DefaultLoS;
+            float radius = DefaultRadius;
+            float buildTime = DefaultBuildTime;
+
+            if (TechTreeDB.Instance != null && TechTreeDB.Instance.TryGetBuilding("GatherersHut", out var def))
+            {
+                if (def.hp > 0) hp = def.hp;
+                if (def.lineOfSight > 0) los = def.lineOfSight;
+                if (def.radius > 0) radius = def.radius;
+                // Note: BuildingDef doesn't have buildTime, using default
+            }
+
+            var entity = ecb.CreateEntity();
+
+            ecb.AddComponent(entity, new PresentationId { Id = PresentationID });
+            ecb.AddComponent(entity, LocalTransform.FromPositionRotationScale(position, quaternion.identity, 1f));
+            ecb.AddComponent(entity, new FactionTag { Value = faction });
+            ecb.AddComponent(entity, new BuildingTag { IsBase = 0 });
+            ecb.AddComponent(entity, new GathererHutTag());
+            ecb.AddComponent(entity, new Health { Value = 1, Max = (int)hp });
+            ecb.AddComponent(entity, new LineOfSight { Radius = los });
+            ecb.AddComponent(entity, new Radius { Value = radius });
+            ecb.AddComponent(entity, new UnderConstruction { Progress = 0f, Total = buildTime });
+            ecb.AddComponent(entity, new Buildable { BuildTimeSeconds = buildTime });
 
             return entity;
         }
     }
-
-    /// <summary>
-    /// Hut building tag.
-    /// </summary>
-    public struct HutTag : IComponentData { }
 }

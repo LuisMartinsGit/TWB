@@ -3,11 +3,13 @@
     "rootNamespace": "TheWaningBorder.World",
     "references": [
         "TheWaningBorder.Core",
-        "TheWaningBorder.Input",
+        "TheWaningBorder.Data",
+        "TheWaningBorder.Entities",
         "Unity.Entities",
         "Unity.Transforms",
         "Unity.Mathematics",
-        "Unity.Collections"
+        "Unity.Collections",
+        "Unity.Burst"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

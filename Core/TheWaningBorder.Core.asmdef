@@ -1,7 +1,13 @@
 {
     "name": "TheWaningBorder.Core",
     "rootNamespace": "TheWaningBorder.Core",
-    "references": ["Unity.Entities", "Unity.Transforms", "Unity.Mathematics", "Unity.Collections", "Unity.Burst"],
+    "references": [
+        "Unity.Entities",
+        "Unity.Transforms",
+        "Unity.Mathematics",
+        "Unity.Collections",
+        "Unity.Burst"
+    ],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": true,

@@ -1,7 +1,12 @@
 {
     "name": "TheWaningBorder.Data",
     "rootNamespace": "TheWaningBorder.Data",
-    "references": ["TheWaningBorder.Core"],
+    "references": [
+        "TheWaningBorder.Core",
+        "Unity.Entities",
+        "Unity.Mathematics",
+        "Unity.Collections"
+    ],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,

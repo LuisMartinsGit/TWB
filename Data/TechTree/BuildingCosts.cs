@@ -4,7 +4,7 @@
 // Part of: Data/
 
 using System.Collections.Generic;
-using TheWaningBorder.Economy;
+using TheWaningBorder.Core;
 
 namespace TheWaningBorder.Data
 {
