@@ -6,6 +6,7 @@ using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
 using TheWaningBorder.Core;
+using System.Collections.Generic;  // For IComparer<T>
 
 namespace TheWaningBorder.AI
 {

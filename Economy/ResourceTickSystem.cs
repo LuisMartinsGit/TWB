@@ -231,69 +231,8 @@ namespace TheWaningBorder.Economy
             public int Veilsteel;
             public int Glow;
         }
-    }
     
-    // ═══════════════════════════════════════════════════════════════════════
-    // ECONOMY BOOTSTRAP
-    // ═══════════════════════════════════════════════════════════════════════
-    
-    /// <summary>
-    /// Static bootstrap class to initialize faction economy entities.
-    /// Call EnsureFactionBanks during game initialization.
-    /// </summary>
-    public static class EconomyBootstrap
-    {
-        /// <summary>
-        /// Ensure one resource bank entity per participating faction.
-        /// Creates entities with FactionResources, FactionPopulation, and ResourceTickState.
-        /// 
-        /// Starting resources: supplies=400, iron=150, crystal=0, veilsteel=0, glow=0
-        /// Starting population: current=0, max=0 (increases as buildings are constructed)
-        /// </summary>
-        /// <param name="totalPlayers">Number of players/factions in the game</param>
-        public static void EnsureFactionBanks(int totalPlayers)
-        {
-            var world = World.DefaultGameObjectInjectionWorld;
-            if (world == null) return;
 
-            var em = world.EntityManager;
-
-            for (int i = 0; i < totalPlayers; i++)
-            {
-                var fac = (Faction)i;
-
-                // Check if a bank already exists for this faction
-                if (FactionBankExists(em, fac))
-                    continue;
-
-                // Create faction resource bank with all tracking components
-                var bank = em.CreateEntity(
-                    typeof(FactionTag),
-                    typeof(FactionResources),
-                    typeof(ResourceTickState),
-                    typeof(FactionPopulation)
-                );
-
-                em.SetComponentData(bank, new FactionTag { Value = fac });
-                
-                // Initialize material resources
-                em.SetComponentData(bank, FactionResources.DefaultStart);
-
-                // Initialize population (starts at 0/0)
-                em.SetComponentData(bank, new FactionPopulation
-                {
-                    Current = 0,
-                    Max = 0
-                });
-
-                // Initialize resource tick tracking
-                em.SetComponentData(bank, new ResourceTickState
-                {
-                    LastWholeSecond = (int)math.floor(world.Time.ElapsedTime)
-                });
-            }
-        }
-        
         private static bool FactionBankExists(EntityManager em, Faction fac)
         {
             var query = em.CreateEntityQuery(

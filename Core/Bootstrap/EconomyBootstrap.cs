@@ -6,6 +6,7 @@ using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Collections;
 using UnityEngine;
+using EntityWorld = Unity.Entities.World;
 
 namespace TheWaningBorder.Economy
 {
@@ -48,7 +49,7 @@ namespace TheWaningBorder.Economy
         /// <param name="totalPlayers">Number of factions to initialize</param>
         public static void EnsureFactionBanks(int totalPlayers)
         {
-            var world = World.DefaultGameObjectInjectionWorld;
+            EntityWorld world = EntityWorld.DefaultGameObjectInjectionWorld;
             if (world == null || !world.IsCreated)
             {
                 Debug.LogError("[EconomyBootstrap] No valid World exists!");
