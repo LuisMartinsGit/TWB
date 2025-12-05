@@ -1,43 +1,14 @@
 // LockstepTypes.cs
-// Shared types for lockstep multiplayer system
-// Part of: Multiplayer/Lockstep/
+// All lockstep-related types for multiplayer synchronization
+// Location: Assets/Scripts/Core/Multiplayer/LockstepTypes.cs
 
 using System;
 using System.Net;
 using Unity.Entities;
 using Unity.Mathematics;
 
-namespace TheWaningBorder.Multiplayer
+namespace TheWaningBorder.Core.Multiplayer
 {
-    // ═══════════════════════════════════════════════════════════════════════════
-    // PLAYER INFO TYPES
-    // ═══════════════════════════════════════════════════════════════════════════
-
-    /// <summary>
-    /// Information about a remote player for lockstep connections.
-    /// Used during lobby-to-game transition.
-    /// </summary>
-    public class RemotePlayerInfo
-    {
-        public string IP;
-        public int Port;
-        public Faction Faction;
-        public string PlayerName;
-    }
-
-    /// <summary>
-    /// Runtime data for a connected remote player.
-    /// Maintained by LockstepManager during gameplay.
-    /// </summary>
-    public class RemotePlayer
-    {
-        public int PlayerIndex;
-        public Faction Faction;
-        public IPEndPoint EndPoint;
-        public int LastConfirmedTick;
-        public int Latency; // ms
-    }
-
     // ═══════════════════════════════════════════════════════════════════════════
     // COMMAND TYPES
     // ═══════════════════════════════════════════════════════════════════════════
@@ -134,6 +105,35 @@ namespace TheWaningBorder.Multiplayer
                 return null;
             }
         }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // PLAYER INFO TYPES
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Information about a remote player for lockstep connections.
+    /// Used during lobby-to-game transition.
+    /// </summary>
+    public class RemotePlayerInfo
+    {
+        public string IP;
+        public int Port;
+        public Faction Faction;
+        public string PlayerName;
+    }
+
+    /// <summary>
+    /// Runtime data for a connected remote player.
+    /// Maintained by LockstepManager during gameplay.
+    /// </summary>
+    public class RemotePlayer
+    {
+        public int PlayerIndex;
+        public Faction Faction;
+        public IPEndPoint EndPoint;
+        public int LastConfirmedTick;
+        public int Latency; // ms
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

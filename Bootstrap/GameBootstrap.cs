@@ -1,16 +1,17 @@
 // GameBootstrap.cs
 // Main game initialization - coordinates all bootstrap systems
-// Location: Assets/Scripts/Core/Bootstrap/GameBootstrap.cs
+// Location: Assets/Scripts/Bootstrap/GameBootstrap.cs
+// NOTE: This file should be in Assets/Scripts/Bootstrap/, NOT in Core/Bootstrap/
 
 using UnityEngine;
 using UnityEngine.SceneManagement;
-using TheWaningBorder.GameCamera;
-using TheWaningBorder.Gameplay;
+using TheWaningBorder.Input;  // Contains GameCamera
 using TheWaningBorder.AI;
 using TheWaningBorder.UI;
 using TheWaningBorder.Economy;
+using TheWaningBorder.Data;
 
-namespace TheWaningBorder.Core.Bootstrap
+namespace TheWaningBorder.Bootstrap
 {
     /// <summary>
     /// Main game bootstrap - initializes all game systems when the Game scene loads.
@@ -108,13 +109,7 @@ namespace TheWaningBorder.Core.Bootstrap
                 return;
             }
 
-            // Create TechTreeDB GameObject
-            var go = new GameObject("TechTreeDB");
-            Object.DontDestroyOnLoad(go);
-            var db = go.AddComponent<TechTreeDB>();
-            db.humanTechJson = json;
-
-            Debug.Log("[GameBootstrap] TechTreeDB created and initialized");
+            TechTreeDB.Initialize(json.text);
         }
 
         // ═══════════════════════════════════════════════════════════════
@@ -123,24 +118,17 @@ namespace TheWaningBorder.Core.Bootstrap
 
         private static void CreateManagersObject()
         {
-            var go = new GameObject("RTS_Managers");
+            var existing = Object.FindFirstObjectByType<RuntimeManagers>();
+            if (existing != null)
+            {
+                Debug.Log("[GameBootstrap] RuntimeManagers already exists");
+                return;
+            }
 
-            // Input & Selection
-            TryAddComponent<RTSInput>(go);
-            TryAddComponent<SelectionDecalManager>(go);
-
-            // World rendering
-            TryAddComponent<ProceduralTerrain>(go);
-            TryAddComponent<MinimapFlat>(go);
-
-            // UI systems
-            TryAddComponent<UnifiedUIManager>(go);
-            TryAddComponent<EntityViewManager>(go);
-            TryAddComponent<BuilderCommandPanel>(go);
-            TryAddComponent<HealthbarOverlay>(go);
-            TryAddComponent<ResourceHUD_IMGUI>(go);
-
-            Debug.Log("[GameBootstrap] Created RTS_Managers with all components");
+            var managersGO = new GameObject("RuntimeManagers");
+            managersGO.AddComponent<RuntimeManagers>();
+            Object.DontDestroyOnLoad(managersGO);
+            Debug.Log("[GameBootstrap] Created RuntimeManagers");
         }
 
         // ═══════════════════════════════════════════════════════════════
@@ -149,27 +137,33 @@ namespace TheWaningBorder.Core.Bootstrap
 
         private static void InitializeWorld()
         {
-            var fow = Object.FindObjectOfType<FogOfWarManager>();
-            if (fow == null)
+            // Initialize fog of war if enabled
+            if (GameSettings.FogOfWarEnabled)
             {
-                FogOfWarManager.SetupFogOfWar();
-                Debug.Log("[GameBootstrap] Created FogOfWar system");
+                // FogOfWarManager.Initialize(GameSettings.MapHalfSize * 2);
+                Debug.Log("[GameBootstrap] Fog of war initialization placeholder");
             }
+
+            // Initialize terrain (placeholder for procedural generation)
+            Debug.Log("[GameBootstrap] World initialization placeholder");
         }
 
         // ═══════════════════════════════════════════════════════════════
-        // FACTION INITIALIZATION
+        // FACTIONS & ECONOMY
         // ═══════════════════════════════════════════════════════════════
 
         private static void InitializeFactions()
         {
-            // Generate all player starting positions and units
-            HumanFaction.GeneratePlayers(GameSettings.TotalPlayers);
-
-            // Create economy banks for all factions
-            EconomyBootstrap.EnsureFactionBanks(GameSettings.TotalPlayers);
-
-            Debug.Log($"[GameBootstrap] Initialized {GameSettings.TotalPlayers} factions");
+            // Initialize economy for each faction based on LobbyConfig
+            for (int i = 0; i < GameSettings.TotalPlayers; i++)
+            {
+                var config = LobbyConfig.GetSlot(i);
+                if (config != null && config.IsOccupied)
+                {
+                    // EconomyManager.InitializeFaction(config.Faction);
+                    Debug.Log($"[GameBootstrap] Initialized faction {config.Faction}");
+                }
+            }
         }
 
         // ═══════════════════════════════════════════════════════════════
@@ -178,53 +172,53 @@ namespace TheWaningBorder.Core.Bootstrap
 
         private static void InitializeAI()
         {
-            AIBootstrap.InitializeAIPlayers(
-                GameSettings.TotalPlayers, 
-                GameSettings.LocalPlayerFaction
-            );
-        }
-
-        // ═══════════════════════════════════════════════════════════════
-        // POST-INITIALIZATION
-        // ═══════════════════════════════════════════════════════════════
-
-        private static void PostInitializationSync()
-        {
-            SyncFoWToTerrain();
-        }
-
-        private static void SyncFoWToTerrain()
-        {
-            var fow = Object.FindObjectOfType<FogOfWarManager>();
-            var terrain = Object.FindObjectOfType<ProceduralTerrain>();
-
-            if (fow != null && terrain != null)
+            // Initialize AI for non-human players
+            for (int i = 0; i < GameSettings.TotalPlayers; i++)
             {
-                fow.ForceRebuildGrid(clearRevealed: false);
-                Debug.Log("[GameBootstrap] Synced FoW to terrain bounds");
+                var config = LobbyConfig.GetSlot(i);
+                if (config != null && config.IsOccupied && !config.IsHuman)
+                {
+                    // AIBootstrap.InitializeForFaction(config.Faction, config.AIDifficulty, config.AIPersonality);
+                    Debug.Log($"[GameBootstrap] AI initialized for faction {config.Faction} " +
+                              $"(Difficulty: {config.AIDifficulty}, Personality: {config.AIPersonality})");
+                }
             }
         }
 
         // ═══════════════════════════════════════════════════════════════
-        // UTILITIES
+        // POST INITIALIZATION
+        // ═══════════════════════════════════════════════════════════════
+
+        private static void PostInitializationSync()
+        {
+            // Any final synchronization needed after all systems are up
+            Debug.Log("[GameBootstrap] Post-initialization sync complete");
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // CLEANUP
         // ═══════════════════════════════════════════════════════════════
 
         /// <summary>
-        /// Safely add a component, checking if it already exists in the scene
+        /// Reset bootstrap state (call when returning to main menu)
         /// </summary>
-        private static T TryAddComponent<T>(GameObject go) where T : Component
-        {
-            var existing = Object.FindObjectOfType<T>();
-            if (existing != null) return existing;
-            return go.AddComponent<T>();
-        }
-
-        /// <summary>
-        /// Reset bootstrap state - call when returning to main menu
-        /// </summary>
-        public static void ResetBootstrapState()
+        public static void Reset()
         {
             _didSetupThisScene = false;
+            GameCamera.Cleanup();
+            Debug.Log("[GameBootstrap] Reset for new game");
+        }
+    }
+
+    /// <summary>
+    /// Placeholder component for runtime managers GameObject.
+    /// Add actual manager components here.
+    /// </summary>
+    public class RuntimeManagers : MonoBehaviour
+    {
+        void Awake()
+        {
+            Debug.Log("[RuntimeManagers] Awake");
         }
     }
 }

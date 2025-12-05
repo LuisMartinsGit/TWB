@@ -1,6 +1,6 @@
 // LockstepManager.cs
 // Lockstep multiplayer manager for deterministic simulation
-// Part of: Multiplayer/Lockstep/
+// Location: Assets/Scripts/Multiplayer/Lockstep/LockstepManager.cs
 
 using System;
 using System.Collections.Generic;
@@ -11,12 +11,15 @@ using UnityEngine;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Collections;
-using TheWaningBorder.Core;
+using TheWaningBorder.Core.Multiplayer;
+using TheWaningBorder.Core.Commands;
 
 namespace TheWaningBorder.Multiplayer
 {
     /// <summary>
     /// Lockstep multiplayer manager.
+    /// Implements ILockstepService to allow Core assemblies to queue commands
+    /// without circular dependency.
     /// 
     /// How it works:
     /// 1. Game runs in discrete "ticks" (e.g., 10 ticks per second)
@@ -31,7 +34,7 @@ namespace TheWaningBorder.Multiplayer
     /// - PING|timestamp                                           (Latency measurement)
     /// - PONG|timestamp                                           (Latency response)
     /// </summary>
-    public class LockstepManager : MonoBehaviour
+    public class LockstepManager : MonoBehaviour, ILockstepService
     {
         // ═══════════════════════════════════════════════════════════════════════
         // SINGLETON
@@ -61,50 +64,64 @@ namespace TheWaningBorder.Multiplayer
         // SIMULATION STATE
         // ═══════════════════════════════════════════════════════════════════════
         
-        private int _currentTick = 0;
-        private float _tickAccumulator = 0f;
-        private bool _simulationStarted = false;
-        private bool _waitingForPlayers = false;
-
-        // Command buffers
-        private Dictionary<int, List<LockstepCommand>> _localCommands = new();
-        private Dictionary<int, Dictionary<int, List<LockstepCommand>>> _remoteCommands = new();
-
-        // Confirmed ticks per player
-        private Dictionary<int, int> _confirmedTicks = new();
-
-        // Local player info
-        private int _localPlayerIndex = 0;
-        private Faction _localFaction = Faction.Blue;
-
-        // Sync verification
-        private Dictionary<int, uint> _checksums = new();
-
+        private int _currentTick;
+        private float _tickAccumulator;
+        private bool _isSimulationRunning;
+        private int _localPlayerIndex;
+        
         // ═══════════════════════════════════════════════════════════════════════
-        // EVENTS
+        // COMMAND BUFFERS
         // ═══════════════════════════════════════════════════════════════════════
         
-        public event Action<int> OnTickAdvanced;
-        public event Action<string> OnDesyncDetected;
-
+        private List<LockstepCommand> _localCommandBuffer = new List<LockstepCommand>();
+        private Dictionary<int, Dictionary<int, List<LockstepCommand>>> _remoteCommands = 
+            new Dictionary<int, Dictionary<int, List<LockstepCommand>>>();
+        private Dictionary<int, int> _confirmedTicks = new Dictionary<int, int>();
+        
+        // ═══════════════════════════════════════════════════════════════════════
+        // SYNC VALIDATION
+        // ═══════════════════════════════════════════════════════════════════════
+        
+        private Dictionary<int, uint> _checksums = new Dictionary<int, uint>();
+        private const int SYNC_CHECK_INTERVAL = 30; // Check every 30 ticks
+        
         // ═══════════════════════════════════════════════════════════════════════
         // DEBUG
         // ═══════════════════════════════════════════════════════════════════════
         
-        [Header("Debug")]
-        public bool LogCommands = true;
-        public bool LogTicks = true;
-        public bool LogNetwork = true;
+        public bool LogTicks = false;
+        public bool LogCommands = false;
 
         // ═══════════════════════════════════════════════════════════════════════
-        // PUBLIC PROPERTIES
+        // ILockstepService IMPLEMENTATION
         // ═══════════════════════════════════════════════════════════════════════
-        
+
+        /// <summary>
+        /// Whether the lockstep simulation is currently running.
+        /// </summary>
+        public bool IsSimulationRunning => _isSimulationRunning;
+
+        /// <summary>
+        /// Whether this instance is the host (server).
+        /// </summary>
         public bool IsHost => _isHost;
-        public bool IsSimulationRunning => _simulationStarted;
-        public int CurrentTick => _currentTick;
-        public Faction LocalFaction => _localFaction;
-        public int LocalPlayerIndex => _localPlayerIndex;
+
+        /// <summary>
+        /// Queue a command for lockstep synchronization.
+        /// </summary>
+        public void QueueCommand(LockstepCommand cmd)
+        {
+            if (!_isSimulationRunning) return;
+            
+            cmd.PlayerIndex = _localPlayerIndex;
+            cmd.Tick = _currentTick + INPUT_DELAY_TICKS;
+            cmd.CommandIndex = _localCommandBuffer.Count;
+            
+            _localCommandBuffer.Add(cmd);
+            
+            if (LogCommands)
+                Debug.Log($"[Lockstep] Queued command type {cmd.Type} for tick {cmd.Tick}");
+        }
 
         // ═══════════════════════════════════════════════════════════════════════
         // LIFECYCLE
@@ -118,267 +135,203 @@ namespace TheWaningBorder.Multiplayer
                 return;
             }
             Instance = this;
-            DontDestroyOnLoad(gameObject);
+            
+            // Register with service locator
+            LockstepServiceLocator.Register(this);
         }
 
         void OnDestroy()
         {
-            Shutdown();
-            if (Instance == this) Instance = null;
+            if (Instance == this)
+            {
+                Instance = null;
+                LockstepServiceLocator.Unregister(this);
+            }
+            StopNetwork();
         }
 
         void Update()
         {
-            if (!_simulationStarted) return;
+            if (!_isSimulationRunning) return;
 
-            ReceiveMessages();
-
-            // Confirm our commands for the current input tick
-            int inputTick = _currentTick + INPUT_DELAY_TICKS;
-            if (_confirmedTicks.GetValueOrDefault(_localPlayerIndex, -1) < inputTick)
-            {
-                ConfirmTick(inputTick);
-            }
-
-            // Advance simulation
+            ReceiveNetworkMessages();
+            
             _tickAccumulator += Time.deltaTime;
+            
             while (_tickAccumulator >= TICK_DURATION)
             {
                 if (CanAdvanceTick())
                 {
-                    AdvanceTick();
+                    ProcessTick(_currentTick);
+                    _currentTick++;
                     _tickAccumulator -= TICK_DURATION;
+                    
+                    // Send our commands for future tick
+                    BroadcastTick(_currentTick + INPUT_DELAY_TICKS, _localCommandBuffer);
+                    _localCommandBuffer.Clear();
                 }
                 else
                 {
-                    if (!_waitingForPlayers)
-                    {
-                        _waitingForPlayers = true;
-                        if (LogTicks) Debug.Log($"[Lockstep] Waiting for players at tick {_currentTick}");
-                    }
+                    // Waiting for other players
                     break;
                 }
             }
         }
 
         // ═══════════════════════════════════════════════════════════════════════
-        // INITIALIZATION
+        // PUBLIC API
         // ═══════════════════════════════════════════════════════════════════════
 
         /// <summary>
-        /// Initialize as the game host.
+        /// Initialize as host
         /// </summary>
-        public void InitializeAsHost(int port, List<RemotePlayerInfo> remotePlayerInfos)
+        public void InitializeAsHost(int port, List<RemotePlayerInfo> players)
         {
             _isHost = true;
             _localPlayerIndex = 0;
-            _localFaction = Faction.Blue;
             _localPort = port;
-
-            try
-            {
-                _udpClient = new UdpClient(port);
-                _udpClient.Client.ReceiveTimeout = 1;
-            }
-            catch (SocketException e)
-            {
-                Debug.LogError($"[Lockstep] Failed to bind port {port}: {e.Message}. Using auto-assign...");
-                _udpClient = new UdpClient(0);
-                _localPort = ((IPEndPoint)_udpClient.Client.LocalEndPoint).Port;
-            }
-
-            // Add remote players
-            _remotePlayers.Clear();
-            int playerIndex = 1;
-            foreach (var info in remotePlayerInfos)
-            {
-                _remotePlayers.Add(new RemotePlayer
-                {
-                    PlayerIndex = playerIndex,
-                    Faction = info.Faction,
-                    EndPoint = new IPEndPoint(IPAddress.Parse(info.IP), info.Port),
-                    LastConfirmedTick = -1
-                });
-                _confirmedTicks[playerIndex] = -1;
-                playerIndex++;
-            }
-
-            _confirmedTicks[0] = -1;
-            Debug.Log($"[Lockstep] Initialized as HOST on port {_localPort} with {_remotePlayers.Count} remote players");
+            
+            SetupRemotePlayers(players);
+            StartNetwork();
+            
+            Debug.Log($"[Lockstep] Initialized as HOST on port {port} with {players.Count} remote players");
         }
 
         /// <summary>
-        /// Initialize as a client connecting to host.
+        /// Initialize as client
         /// </summary>
-        public void InitializeAsClient(int localPort, string hostIP, int hostPort, int playerIndex, Faction faction)
+        public void InitializeAsClient(int localPort, string hostIP, int hostPort, int playerIndex)
         {
             _isHost = false;
             _localPlayerIndex = playerIndex;
-            _localFaction = faction;
-
-            try
-            {
-                _udpClient = new UdpClient(localPort);
-                _localPort = localPort;
-            }
-            catch (SocketException e)
-            {
-                Debug.LogWarning($"[Lockstep] Port {localPort} unavailable: {e.Message}. Using auto-assign...");
-                _udpClient = new UdpClient(0);
-                _localPort = ((IPEndPoint)_udpClient.Client.LocalEndPoint).Port;
-            }
-
-            _udpClient.Client.ReceiveTimeout = 1;
-
-            // Add host as remote player
-            _remotePlayers.Clear();
-            _remotePlayers.Add(new RemotePlayer
+            _localPort = localPort;
+            
+            var hostPlayer = new RemotePlayer
             {
                 PlayerIndex = 0,
-                Faction = Faction.Blue,
-                EndPoint = new IPEndPoint(IPAddress.Parse(hostIP), hostPort),
-                LastConfirmedTick = -1
-            });
-
-            _confirmedTicks[0] = -1;
-            _confirmedTicks[_localPlayerIndex] = -1;
-
-            Debug.Log($"[Lockstep] Initialized as CLIENT (player {playerIndex}) on port {_localPort}, host at {hostIP}:{hostPort}");
+                EndPoint = new IPEndPoint(IPAddress.Parse(hostIP), hostPort)
+            };
+            _remotePlayers.Add(hostPlayer);
+            
+            StartNetwork();
+            
+            Debug.Log($"[Lockstep] Initialized as CLIENT (player {playerIndex}) connecting to {hostIP}:{hostPort}");
         }
 
         /// <summary>
-        /// Start the lockstep simulation.
+        /// Start the lockstep simulation
         /// </summary>
         public void StartSimulation()
         {
             _currentTick = 0;
-            _tickAccumulator = 0f;
-            _simulationStarted = true;
-            _waitingForPlayers = false;
-
-            // Pre-confirm initial ticks
-            for (int t = 0; t < INPUT_DELAY_TICKS + 1; t++)
-            {
-                _localCommands[t] = new List<LockstepCommand>();
-                ConfirmTick(t);
-            }
-
-            Debug.Log("[Lockstep] Simulation started");
-        }
-
-        /// <summary>
-        /// Shutdown the lockstep system.
-        /// </summary>
-        public void Shutdown()
-        {
-            _simulationStarted = false;
-            
-            try
-            {
-                _udpClient?.Close();
-            }
-            catch { }
-            
-            _udpClient = null;
-            _remotePlayers.Clear();
-            _localCommands.Clear();
+            _tickAccumulator = 0;
+            _isSimulationRunning = true;
+            _localCommandBuffer.Clear();
             _remoteCommands.Clear();
             _confirmedTicks.Clear();
             _checksums.Clear();
             
-            Debug.Log("[Lockstep] Shutdown complete");
+            // Initialize confirmed ticks for all players
+            _confirmedTicks[_localPlayerIndex] = -1;
+            foreach (var player in _remotePlayers)
+            {
+                _confirmedTicks[player.PlayerIndex] = -1;
+            }
+            
+            Debug.Log("[Lockstep] Simulation started");
         }
-
-        // ═══════════════════════════════════════════════════════════════════════
-        // COMMAND QUEUEING
-        // ═══════════════════════════════════════════════════════════════════════
 
         /// <summary>
-        /// Queue a command to be executed in the future.
+        /// Stop the simulation
         /// </summary>
-        public void QueueCommand(LockstepCommand cmd)
+        public void StopSimulation()
         {
-            int targetTick = _currentTick + INPUT_DELAY_TICKS;
-            cmd.Tick = targetTick;
-            cmd.PlayerIndex = _localPlayerIndex;
-
-            if (!_localCommands.ContainsKey(targetTick))
-                _localCommands[targetTick] = new List<LockstepCommand>();
-
-            _localCommands[targetTick].Add(cmd);
-
-            if (LogCommands)
-                Debug.Log($"[Lockstep] Queued {cmd.Type} command for tick {targetTick}");
+            _isSimulationRunning = false;
+            Debug.Log($"[Lockstep] Simulation stopped at tick {_currentTick}");
         }
 
         // ═══════════════════════════════════════════════════════════════════════
-        // TICK MANAGEMENT
+        // NETWORK SETUP
         // ═══════════════════════════════════════════════════════════════════════
 
-        private void ConfirmTick(int tick)
+        private void SetupRemotePlayers(List<RemotePlayerInfo> players)
         {
-            _confirmedTicks[_localPlayerIndex] = tick;
-
-            if (!_localCommands.ContainsKey(tick))
-                _localCommands[tick] = new List<LockstepCommand>();
-
-            BroadcastTick(tick, _localCommands[tick]);
+            _remotePlayers.Clear();
+            int playerIndex = 1;
+            
+            foreach (var info in players)
+            {
+                var remote = new RemotePlayer
+                {
+                    PlayerIndex = playerIndex++,
+                    Faction = info.Faction,
+                    EndPoint = new IPEndPoint(IPAddress.Parse(info.IP), info.Port),
+                    LastConfirmedTick = -1
+                };
+                _remotePlayers.Add(remote);
+            }
         }
+
+        private void StartNetwork()
+        {
+            try
+            {
+                _udpClient = new UdpClient(_localPort);
+                _udpClient.Client.Blocking = false;
+                Debug.Log($"[Lockstep] Network started on port {_localPort}");
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[Lockstep] Failed to start network: {e.Message}");
+            }
+        }
+
+        private void StopNetwork()
+        {
+            _udpClient?.Close();
+            _udpClient = null;
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // TICK PROCESSING
+        // ═══════════════════════════════════════════════════════════════════════
 
         private bool CanAdvanceTick()
         {
-            if (_remotePlayers.Count == 0)
-                return true;
-
-            // Check all remote players have confirmed
+            // In single player, always advance
+            if (_remotePlayers.Count == 0) return true;
+            
+            // Check all players have confirmed the current tick
             foreach (var player in _remotePlayers)
             {
                 if (_confirmedTicks.GetValueOrDefault(player.PlayerIndex, -1) < _currentTick)
                     return false;
             }
-
-            return _confirmedTicks.GetValueOrDefault(_localPlayerIndex, -1) >= _currentTick;
+            return true;
         }
 
-        private void AdvanceTick()
+        private void ProcessTick(int tick)
         {
-            ExecuteCommands(_currentTick);
+            if (LogTicks)
+                Debug.Log($"[Lockstep] Processing tick {tick}");
 
-            // Periodic sync check
-            if (_currentTick % 10 == 0)
-            {
-                uint checksum = ComputeChecksum();
-                _checksums[_currentTick] = checksum;
-                BroadcastSync(_currentTick, checksum);
-            }
-
-            _currentTick++;
-            _waitingForPlayers = false;
-
-            OnTickAdvanced?.Invoke(_currentTick);
-            CleanupOldData(_currentTick - MAX_TICK_BUFFER);
-        }
-
-        private void ExecuteCommands(int tick)
-        {
+            // Gather all commands for this tick
             var allCommands = new List<LockstepCommand>();
-
-            // Collect local commands
-            if (_localCommands.TryGetValue(tick, out var localCmds))
-                allCommands.AddRange(localCmds);
-
-            // Collect remote commands
-            if (_remoteCommands.TryGetValue(tick, out var remoteCmdsByPlayer))
+            
+            // Remote commands
+            if (_remoteCommands.TryGetValue(tick, out var tickCommands))
             {
-                foreach (var kvp in remoteCmdsByPlayer)
-                    allCommands.AddRange(kvp.Value);
+                foreach (var playerCommands in tickCommands.Values)
+                {
+                    allCommands.AddRange(playerCommands);
+                }
             }
 
-            // Sort for determinism
+            // Sort for determinism (by player index, then command index)
             allCommands.Sort((a, b) =>
             {
                 int cmp = a.PlayerIndex.CompareTo(b.PlayerIndex);
-                return cmp != 0 ? cmp : a.Type.CompareTo(b.Type);
+                return cmp != 0 ? cmp : a.CommandIndex.CompareTo(b.CommandIndex);
             });
 
             if (LogTicks && allCommands.Count > 0)
@@ -387,6 +340,17 @@ namespace TheWaningBorder.Multiplayer
             foreach (var cmd in allCommands)
             {
                 ExecuteCommand(cmd);
+            }
+            
+            // Cleanup old tick data
+            _remoteCommands.Remove(tick - MAX_TICK_BUFFER);
+            
+            // Periodic sync check
+            if (tick % SYNC_CHECK_INTERVAL == 0)
+            {
+                uint checksum = ComputeGameStateChecksum();
+                _checksums[tick] = checksum;
+                BroadcastSync(tick, checksum);
             }
         }
 
@@ -410,20 +374,20 @@ namespace TheWaningBorder.Multiplayer
             switch (cmd.Type)
             {
                 case LockstepCommandType.Move:
-                    CommandGateway.IssueMove(em, entity, cmd.TargetPosition);
+                    MoveCommandHelper.Execute(em, entity, cmd.TargetPosition);
                     if (LogCommands) Debug.Log($"[Lockstep] Executed Move from player {cmd.PlayerIndex}");
                     break;
 
                 case LockstepCommandType.Attack:
                     if (targetEntity != Entity.Null)
                     {
-                        CommandGateway.IssueAttack(em, entity, targetEntity);
+                        AttackCommandHelper.Execute(em, entity, targetEntity);
                         if (LogCommands) Debug.Log($"[Lockstep] Executed Attack from player {cmd.PlayerIndex}");
                     }
                     break;
 
                 case LockstepCommandType.Stop:
-                    CommandGateway.IssueStop(em, entity);
+                    CommandHelper.ClearAllCommands(em, entity);
                     if (LogCommands) Debug.Log($"[Lockstep] Executed Stop from player {cmd.PlayerIndex}");
                     break;
 
@@ -431,21 +395,21 @@ namespace TheWaningBorder.Multiplayer
                     Entity depositEntity = cmd.SecondaryTargetId > 0 ? FindEntityByNetworkId(cmd.SecondaryTargetId) : Entity.Null;
                     if (targetEntity != Entity.Null)
                     {
-                        CommandGateway.IssueGather(em, entity, targetEntity, depositEntity);
+                        GatherCommandHelper.Execute(em, entity, targetEntity, depositEntity);
                         if (LogCommands) Debug.Log($"[Lockstep] Executed Gather from player {cmd.PlayerIndex}");
                     }
                     break;
 
                 case LockstepCommandType.Build:
                     Entity buildTarget = cmd.TargetEntityId > 0 ? FindEntityByNetworkId(cmd.TargetEntityId) : Entity.Null;
-                    CommandGateway.IssueBuild(em, entity, buildTarget, cmd.BuildingId, cmd.TargetPosition);
+                    BuildCommandHelper.Execute(em, entity, buildTarget, cmd.BuildingId, cmd.TargetPosition);
                     if (LogCommands) Debug.Log($"[Lockstep] Executed Build from player {cmd.PlayerIndex}");
                     break;
 
                 case LockstepCommandType.Heal:
                     if (targetEntity != Entity.Null)
                     {
-                        CommandGateway.IssueHeal(em, entity, targetEntity);
+                        HealCommandHelper.Execute(em, entity, targetEntity);
                         if (LogCommands) Debug.Log($"[Lockstep] Executed Heal from player {cmd.PlayerIndex}");
                     }
                     break;
@@ -453,11 +417,36 @@ namespace TheWaningBorder.Multiplayer
                 case LockstepCommandType.SetRally:
                     if (entity != Entity.Null)
                     {
-                        CommandGateway.SetRallyPoint(em, entity, cmd.TargetPosition);
+                        if (!em.HasComponent<RallyPoint>(entity))
+                            em.AddComponent<RallyPoint>(entity);
+                        em.SetComponentData(entity, new RallyPoint { Position = cmd.TargetPosition, Has = 1 });
                         if (LogCommands) Debug.Log($"[Lockstep] Executed RallyPoint from player {cmd.PlayerIndex}");
                     }
                     break;
             }
+        }
+
+        private Entity FindEntityByNetworkId(int networkId)
+        {
+            var world = World.DefaultGameObjectInjectionWorld;
+            if (world == null || !world.IsCreated) return Entity.Null;
+
+            var em = world.EntityManager;
+            var query = em.CreateEntityQuery(typeof(NetworkedEntity));
+            var entities = query.ToEntityArray(Allocator.Temp);
+
+            Entity result = Entity.Null;
+            for (int i = 0; i < entities.Length; i++)
+            {
+                if (em.GetComponentData<NetworkedEntity>(entities[i]).NetworkId == networkId)
+                {
+                    result = entities[i];
+                    break;
+                }
+            }
+            
+            entities.Dispose();
+            return result;
         }
 
         // ═══════════════════════════════════════════════════════════════════════
@@ -482,30 +471,12 @@ namespace TheWaningBorder.Multiplayer
             {
                 try
                 {
-                    _udpClient.Send(data, data.Length, player.EndPoint);
-                    if (LogNetwork)
-                        Debug.Log($"[Lockstep] Sent tick {tick} to player {player.PlayerIndex}");
+                    _udpClient?.Send(data, data.Length, player.EndPoint);
                 }
                 catch (Exception e)
                 {
-                    Debug.LogError($"[Lockstep] Failed to send to player {player.PlayerIndex}: {e.Message}");
+                    Debug.LogWarning($"[Lockstep] Failed to send to player {player.PlayerIndex}: {e.Message}");
                 }
-            }
-        }
-
-        private void RelayTickMessage(string message, int sourcePlayer)
-        {
-            byte[] data = Encoding.UTF8.GetBytes(message);
-
-            foreach (var player in _remotePlayers)
-            {
-                if (player.PlayerIndex == sourcePlayer) continue;
-
-                try
-                {
-                    _udpClient.Send(data, data.Length, player.EndPoint);
-                }
-                catch { }
             }
         }
 
@@ -518,28 +489,34 @@ namespace TheWaningBorder.Multiplayer
             {
                 try
                 {
-                    _udpClient.Send(data, data.Length, player.EndPoint);
+                    _udpClient?.Send(data, data.Length, player.EndPoint);
                 }
                 catch { }
             }
         }
 
-        private void SendPong(IPEndPoint target, string timestamp)
+        private void RelayTickMessage(string message, int originalSender)
         {
-            try
+            byte[] data = Encoding.UTF8.GetBytes(message);
+            
+            foreach (var player in _remotePlayers)
             {
-                string message = $"PONG|{timestamp}";
-                byte[] data = Encoding.UTF8.GetBytes(message);
-                _udpClient.Send(data, data.Length, target);
+                if (player.PlayerIndex != originalSender)
+                {
+                    try
+                    {
+                        _udpClient?.Send(data, data.Length, player.EndPoint);
+                    }
+                    catch { }
+                }
             }
-            catch { }
         }
 
         // ═══════════════════════════════════════════════════════════════════════
         // NETWORK - RECEIVE
         // ═══════════════════════════════════════════════════════════════════════
 
-        private void ReceiveMessages()
+        private void ReceiveNetworkMessages()
         {
             if (_udpClient == null) return;
 
@@ -547,24 +524,20 @@ namespace TheWaningBorder.Multiplayer
             {
                 while (_udpClient.Available > 0)
                 {
-                    IPEndPoint remoteEP = new IPEndPoint(IPAddress.Any, 0);
-                    byte[] data = _udpClient.Receive(ref remoteEP);
+                    IPEndPoint sender = null;
+                    byte[] data = _udpClient.Receive(ref sender);
                     string message = Encoding.UTF8.GetString(data);
-
-                    if (LogNetwork)
-                        Debug.Log($"[Lockstep] Received: {message.Substring(0, Math.Min(50, message.Length))}...");
-
-                    ProcessMessage(message, remoteEP);
+                    ProcessNetworkMessage(message, sender);
                 }
             }
             catch (SocketException) { }
             catch (Exception e)
             {
-                Debug.LogError($"[Lockstep] Receive error: {e.Message}");
+                Debug.LogWarning($"[Lockstep] Network receive error: {e.Message}");
             }
         }
 
-        private void ProcessMessage(string message, IPEndPoint sender)
+        private void ProcessNetworkMessage(string message, IPEndPoint sender)
         {
             string[] parts = message.Split('|');
             if (parts.Length < 1) return;
@@ -581,7 +554,6 @@ namespace TheWaningBorder.Multiplayer
                     SendPong(sender, parts.Length > 1 ? parts[1] : "0");
                     break;
                 case "PONG":
-                    // Latency measurement (optional)
                     break;
             }
         }
@@ -637,73 +609,48 @@ namespace TheWaningBorder.Multiplayer
                 if (localChecksum != remoteChecksum)
                 {
                     Debug.LogError($"[Lockstep] DESYNC DETECTED at tick {tick}! Local: {localChecksum}, Remote: {remoteChecksum}");
-                    OnDesyncDetected?.Invoke($"Desync at tick {tick}");
                 }
             }
         }
 
-        // ═══════════════════════════════════════════════════════════════════════
-        // HELPERS
-        // ═══════════════════════════════════════════════════════════════════════
-
-        private Entity FindEntityByNetworkId(int networkId)
+        private void SendPong(IPEndPoint target, string timestamp)
         {
-            if (networkId <= 0) return Entity.Null;
+            string message = $"PONG|{timestamp}";
+            byte[] data = Encoding.UTF8.GetBytes(message);
+            try
+            {
+                _udpClient?.Send(data, data.Length, target);
+            }
+            catch { }
+        }
 
+        // ═══════════════════════════════════════════════════════════════════════
+        // SYNC VALIDATION
+        // ═══════════════════════════════════════════════════════════════════════
+
+        private uint ComputeGameStateChecksum()
+        {
+            uint checksum = 0;
+            
             var world = World.DefaultGameObjectInjectionWorld;
-            if (world == null || !world.IsCreated) return Entity.Null;
+            if (world == null || !world.IsCreated) return checksum;
 
             var em = world.EntityManager;
-            var query = em.CreateEntityQuery(typeof(NetworkedEntity));
+            var query = em.CreateEntityQuery(typeof(NetworkedEntity), typeof(Unity.Transforms.LocalTransform));
             var entities = query.ToEntityArray(Allocator.Temp);
 
-            Entity result = Entity.Null;
             for (int i = 0; i < entities.Length; i++)
             {
-                if (em.GetComponentData<NetworkedEntity>(entities[i]).NetworkId == networkId)
-                {
-                    result = entities[i];
-                    break;
-                }
+                var netEntity = em.GetComponentData<NetworkedEntity>(entities[i]);
+                var transform = em.GetComponentData<Unity.Transforms.LocalTransform>(entities[i]);
+                
+                checksum ^= (uint)netEntity.NetworkId;
+                checksum ^= (uint)(transform.Position.x * 100);
+                checksum ^= (uint)(transform.Position.z * 100);
             }
-
-            entities.Dispose();
-            return result;
-        }
-
-        private uint ComputeChecksum()
-        {
-            var world = World.DefaultGameObjectInjectionWorld;
-            if (world == null || !world.IsCreated) return 0;
-
-            var em = world.EntityManager;
-            var query = em.CreateEntityQuery(typeof(FactionTag));
-            int count = query.CalculateEntityCount();
-            return (uint)(count * 31 + _currentTick);
-        }
-
-        private void CleanupOldData(int beforeTick)
-        {
-            if (beforeTick < 0) return;
-
-            var keysToRemove = new List<int>();
             
-            foreach (var key in _localCommands.Keys)
-                if (key < beforeTick) keysToRemove.Add(key);
-            foreach (var key in keysToRemove)
-                _localCommands.Remove(key);
-
-            keysToRemove.Clear();
-            foreach (var key in _remoteCommands.Keys)
-                if (key < beforeTick) keysToRemove.Add(key);
-            foreach (var key in keysToRemove)
-                _remoteCommands.Remove(key);
-
-            keysToRemove.Clear();
-            foreach (var key in _checksums.Keys)
-                if (key < beforeTick) keysToRemove.Add(key);
-            foreach (var key in keysToRemove)
-                _checksums.Remove(key);
+            entities.Dispose();
+            return checksum;
         }
     }
 }

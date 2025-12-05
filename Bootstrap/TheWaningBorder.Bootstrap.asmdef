@@ -1,0 +1,29 @@
+{
+    "name": "TheWaningBorder.Bootstrap",
+    "rootNamespace": "TheWaningBorder.Bootstrap",
+    "references": [
+        "TheWaningBorder.Core",
+        "TheWaningBorder.Data",
+        "TheWaningBorder.Input",
+        "TheWaningBorder.AI",
+        "TheWaningBorder.UI",
+        "TheWaningBorder.Economy",
+        "TheWaningBorder.Multiplayer",
+        "TheWaningBorder.Systems",
+        "TheWaningBorder.Entities",
+        "TheWaningBorder.World",
+        "Unity.Entities",
+        "Unity.Transforms",
+        "Unity.Mathematics",
+        "Unity.Collections"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
