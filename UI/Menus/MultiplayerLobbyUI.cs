@@ -9,6 +9,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Collections.Generic;
 using System.Linq;
+using TheWaningBorder.Core.Config; 
 
 namespace TheWaningBorder.UI.Menus
 {

@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using Unity.Entities;
 using Unity.Transforms;
+using TheWaningBorder.World.FogOfWar;
 
 namespace TheWaningBorder.UI.HUD
 {

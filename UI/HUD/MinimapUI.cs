@@ -8,7 +8,8 @@ using Unity.Transforms;
 using Unity.Mathematics;
 using Unity.Collections;
 using UnityEngine.EventSystems;
-
+using TheWaningBorder.Input;
+using TheWaningBorder.World.FogOfWar;
 namespace TheWaningBorder.UI.HUD
 {
     /// <summary>

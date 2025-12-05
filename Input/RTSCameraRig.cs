@@ -3,6 +3,7 @@
 // Location: Assets/Scripts/Input/RTSCameraRig.cs
 
 using UnityEngine;
+using TheWaningBorder.Input;
 
 namespace TheWaningBorder.Input
 {

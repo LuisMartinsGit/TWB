@@ -3,6 +3,7 @@
 
 using UnityEngine;
 using Unity.Entities;
+using TheWaningBorder.Core.Cost; 
 
 namespace TheWaningBorder.UI.Common
 {

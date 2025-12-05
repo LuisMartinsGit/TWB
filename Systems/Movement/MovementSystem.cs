@@ -3,6 +3,7 @@ using Unity.Burst;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
+using TheWaningBorder.Core.Commands.Types;
 
 namespace TheWaningBorder.Systems.Movement
 {
@@ -18,7 +19,6 @@ namespace TheWaningBorder.Systems.Movement
     /// </summary>
     [BurstCompile]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
-    [UpdateBefore(typeof(UnifiedCombatSystem))]
     public partial struct MovementSystem : ISystem
     {
         private const float StopDistance = 0.5f;
