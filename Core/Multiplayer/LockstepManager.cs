@@ -13,6 +13,7 @@ using Unity.Mathematics;
 using Unity.Collections;
 using TheWaningBorder.Core.Multiplayer;
 using TheWaningBorder.Core.Commands;
+using TheWaningBorder.Core.Commands.Types;
 
 namespace TheWaningBorder.Multiplayer
 {

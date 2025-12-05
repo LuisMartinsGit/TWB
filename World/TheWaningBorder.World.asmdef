@@ -2,11 +2,20 @@
     "name": "TheWaningBorder.World",
     "rootNamespace": "TheWaningBorder.World",
     "references": [
+        "TheWaningBorder.Core",
+        "TheWaningBorder.Input",
         "Unity.Entities",
+        "Unity.Transforms",
         "Unity.Mathematics",
-        "Unity.Collections",
-        "Unity.Burst",
-        "Unity.Transforms"
+        "Unity.Collections"
     ],
-    "autoReferenced": true
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
 }

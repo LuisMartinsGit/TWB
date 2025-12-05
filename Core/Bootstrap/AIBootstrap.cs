@@ -6,7 +6,7 @@ using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Collections;
 using UnityEngine;
-using TheWaningBorder.Multiplayer.Lobby;
+using TheWaningBorder.Core.Config;
 
 namespace TheWaningBorder.AI
 {
@@ -240,9 +240,9 @@ namespace TheWaningBorder.AI
                 ScoutsCount = 0,
                 QueuedSoldiers = 0,
                 QueuedArchers = 0,
-                QueuedSiegeUnits = 0,           // Correct field name
-                LastRecruitmentCheck = 0,        // Correct field name
-                RecruitmentCheckInterval = 5.0f  // Correct field name
+                QueuedSiegeUnits = 0,
+                LastRecruitmentCheck = 0,
+                RecruitmentCheckInterval = 5.0f
             });
 
             // Shared Intelligence
