@@ -51,7 +51,7 @@ namespace TheWaningBorder.Core.Commands.Types
             if (em.HasComponent<GuardPoint>(unit))
                 em.SetComponentData(unit, new GuardPoint { Position = destination, Has = 1 });
             else
-                em.AddComponent(unit, new GuardPoint { Position = destination, Has = 1 });
+                em.AddComponentData(unit, new GuardPoint { Position = destination, Has = 1 });
         }
 
         /// <summary>
