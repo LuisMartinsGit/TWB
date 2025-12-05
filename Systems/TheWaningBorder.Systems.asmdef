@@ -1,0 +1,14 @@
+{
+    "name": "TheWaningBorder.Systems",
+    "rootNamespace": "TheWaningBorder.Systems",
+    "references": ["TheWaningBorder.Core", "TheWaningBorder.Data", "TheWaningBorder.Entities", "TheWaningBorder.Economy", "Unity.Entities", "Unity.Transforms", "Unity.Mathematics", "Unity.Collections", "Unity.Burst"],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": true,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

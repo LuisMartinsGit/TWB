@@ -1,0 +1,103 @@
+// File: Assets/Scripts/Entities/Buildings/Hut.cs
+using Unity.Entities;
+using Unity.Mathematics;
+using Unity.Transforms;
+
+namespace TheWaningBorder.Entities
+{
+    /// <summary>
+    /// Hut building - housing structure.
+    /// Provides population capacity and generates Supplies.
+    /// </summary>
+    public static class Hut
+    {
+        // Default stats (used if TechTreeDB unavailable)
+        private const float DefaultHP = 600f;
+        private const float DefaultLoS = 14f;
+        private const float DefaultRadius = 1.6f;
+        private const int DefaultSuppliesPerMinute = 180;
+        private const int DefaultPopulation = 10;
+        private const int PresentationID = 102;
+
+        /// <summary>
+        /// Create Hut using EntityManager.
+        /// </summary>
+        public static Entity Create(EntityManager em, float3 position, Faction faction)
+        {
+            // Load stats from TechTreeDB
+            float hp = DefaultHP;
+            float los = DefaultLoS;
+            float radius = DefaultRadius;
+
+            if (TechTreeDB.Instance != null && TechTreeDB.Instance.TryGetBuilding("Hut", out var def))
+            {
+                if (def.hp > 0) hp = def.hp;
+                if (def.lineOfSight > 0) los = def.lineOfSight;
+                if (def.radius > 0) radius = def.radius;
+            }
+
+            var entity = em.CreateEntity(
+                typeof(PresentationId),
+                typeof(LocalTransform),
+                typeof(FactionTag),
+                typeof(BuildingTag),
+                typeof(HutTag),
+                typeof(Health),
+                typeof(LineOfSight),
+                typeof(Radius),
+                typeof(SuppliesIncome),
+                typeof(PopulationProvider)
+            );
+
+            em.SetComponentData(entity, new PresentationId { Id = PresentationID });
+            em.SetComponentData(entity, LocalTransform.FromPositionRotationScale(position, quaternion.identity, 1f));
+            em.SetComponentData(entity, new FactionTag { Value = faction });
+            em.SetComponentData(entity, new BuildingTag { IsBase = 0 });
+            em.SetComponentData(entity, new Health { Value = (int)hp, Max = (int)hp });
+            em.SetComponentData(entity, new LineOfSight { Radius = los });
+            em.SetComponentData(entity, new Radius { Value = radius });
+            em.SetComponentData(entity, new SuppliesIncome { PerMinute = DefaultSuppliesPerMinute });
+            em.SetComponentData(entity, new PopulationProvider { Amount = DefaultPopulation });
+
+            return entity;
+        }
+
+        /// <summary>
+        /// Create Hut using EntityCommandBuffer for deferred creation.
+        /// </summary>
+        public static Entity Create(EntityCommandBuffer ecb, float3 position, Faction faction)
+        {
+            // Load stats from TechTreeDB
+            float hp = DefaultHP;
+            float los = DefaultLoS;
+            float radius = DefaultRadius;
+
+            if (TechTreeDB.Instance != null && TechTreeDB.Instance.TryGetBuilding("Hut", out var def))
+            {
+                if (def.hp > 0) hp = def.hp;
+                if (def.lineOfSight > 0) los = def.lineOfSight;
+                if (def.radius > 0) radius = def.radius;
+            }
+
+            var entity = ecb.CreateEntity();
+
+            ecb.AddComponent(entity, new PresentationId { Id = PresentationID });
+            ecb.AddComponent(entity, LocalTransform.FromPositionRotationScale(position, quaternion.identity, 1f));
+            ecb.AddComponent(entity, new FactionTag { Value = faction });
+            ecb.AddComponent(entity, new BuildingTag { IsBase = 0 });
+            ecb.AddComponent<HutTag>(entity);
+            ecb.AddComponent(entity, new Health { Value = (int)hp, Max = (int)hp });
+            ecb.AddComponent(entity, new LineOfSight { Radius = los });
+            ecb.AddComponent(entity, new Radius { Value = radius });
+            ecb.AddComponent(entity, new SuppliesIncome { PerMinute = DefaultSuppliesPerMinute });
+            ecb.AddComponent(entity, new PopulationProvider { Amount = DefaultPopulation });
+
+            return entity;
+        }
+    }
+
+    /// <summary>
+    /// Hut building tag.
+    /// </summary>
+    public struct HutTag : IComponentData { }
+}
