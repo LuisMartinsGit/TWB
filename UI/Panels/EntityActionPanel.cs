@@ -202,16 +202,16 @@ namespace TheWaningBorder.UI.Panels
             GUILayout.Space(8);
 
             // Training progress bar
-            if (actionInfo.TrainingState != null && actionInfo.TrainingState.IsTraining)
+            if (actionInfo.TrainingState.HasValue && actionInfo.TrainingState.Value.IsTraining)
             {
-                DrawProgressBar(actionInfo.TrainingState);
+                DrawProgressBar(actionInfo.TrainingState.Value);
                 GUILayout.Space(6);
             }
 
             // Training queue
-            if (actionInfo.TrainingState?.Queue != null)
+            if (actionInfo.TrainingState.HasValue && actionInfo.TrainingState.Value.Queue != null)
             {
-                DrawQueue(actionInfo.TrainingState.Queue);
+                DrawQueue(actionInfo.TrainingState.Value.Queue);
             }
 
             GUILayout.EndArea();

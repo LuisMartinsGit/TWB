@@ -1,4 +1,5 @@
 // File: Assets/Scripts/Systems/Movement/UnitSeparationSystem.cs
+using System.Runtime.CompilerServices;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Entities;
@@ -205,6 +206,7 @@ namespace TheWaningBorder.Systems.Movement
         /// Convert world position to spatial grid cell key.
         /// </summary>
         [BurstCompile]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)] 
         private static int2 GetCellKey(in float3 position)
         {
             return new int2(

@@ -3,6 +3,7 @@
 // Location: Assets/Scripts/Input/RTSInput.cs
 
 using System.Collections.Generic;
+using System.Linq;
 using Unity.Entities;
 
 namespace TheWaningBorder.Input
@@ -22,7 +23,7 @@ namespace TheWaningBorder.Input
         /// Currently selected entities.
         /// Delegates to SelectionSystem for actual selection management.
         /// </summary>
-        public static HashSet<Entity> CurrentSelection => SelectionSystem.CurrentSelection;
+        public static IReadOnlyList<Entity> CurrentSelection => SelectionSystem.CurrentSelection;
         
         /// <summary>
         /// Currently hovered entity (for UI highlighting).

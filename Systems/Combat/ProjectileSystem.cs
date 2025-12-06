@@ -1,4 +1,5 @@
 // File: Assets/Scripts/Systems/Combat/ProjectileSystem.cs
+using System.Runtime.CompilerServices;
 using Unity.Burst;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -180,6 +181,7 @@ namespace TheWaningBorder.Systems.Combat
         /// Allows full range of pitch angles for realistic arcing.
         /// </summary>
         [BurstCompile]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)] 
         private static quaternion CalculateArrowRotation(in float3 velocity)
         {
             // Get horizontal direction and speed

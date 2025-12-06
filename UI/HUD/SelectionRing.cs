@@ -7,6 +7,7 @@ using Unity.Entities;
 using Unity.Transforms;
 using TheWaningBorder.World.FogOfWar;
 using EntityWorld = Unity.Entities.World;
+using TheWaningBorder.Input;
 
 namespace TheWaningBorder.UI.HUD
 {
@@ -116,7 +117,7 @@ namespace TheWaningBorder.UI.HUD
 
         private void UpdateHoverRing()
         {
-            var h = RTSInput.CurrentHover;
+            var h = RTSInput.HoveredEntity;
             bool showHover = false;
 
             if (h != Entity.Null && _em.Exists(h) && _em.HasComponent<FactionTag>(h))

@@ -70,14 +70,18 @@ public struct EntityDisplayInfo
     /// <summary>
     /// Training queue information.
     /// </summary>
-    public struct TrainingInfo
-    {
-        public string UnitId;
-        public float Progress;
-        public float Total;
-        public int QueuePosition;
-        public string CurrentUnitId;   // ADD THIS
-        public float TimeRemaining;    // ADD THIS
-    }
+public struct TrainingInfo
+{
+    public string UnitId;
+    public float Progress;
+    public float Total;
+    public int QueuePosition;
+    public string CurrentUnitId;
+    public float TimeRemaining;
+    public string[] Queue;           // ADD THIS - queue of unit IDs
+    
+    // Computed property for convenience
+        public bool IsTraining;       // ADD THIS (set when constructing the struct)
+}
     
 }

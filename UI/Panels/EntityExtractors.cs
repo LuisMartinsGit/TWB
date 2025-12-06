@@ -197,7 +197,7 @@ namespace TheWaningBorder.UI
                         {
                             Id = unit.id,
                             Label = unit.name,
-                            Tooltip = unit.role ?? "",
+                            Tooltip = unit.unitClass ?? "",
                             Cost = unit.cost != null ? new Cost
                             {
                                 Supplies = unit.cost.Supplies,
