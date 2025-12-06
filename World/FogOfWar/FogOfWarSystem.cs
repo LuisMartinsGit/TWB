@@ -3,6 +3,7 @@ using Unity.Collections;
 using Unity.Transforms;
 using Unity.Mathematics;
 using UnityEngine;
+using EntityWorld = Unity.Entities.World;
 
 namespace TheWaningBorder.World.FogOfWar
 {
@@ -18,7 +19,7 @@ namespace TheWaningBorder.World.FogOfWar
             var mgr = FogOfWarManager.Instance;
             if (mgr == null) return;
 
-            var em = World.DefaultGameObjectInjectionWorld.EntityManager;
+            var em = EntityWorld.DefaultGameObjectInjectionWorld.EntityManager;
 
             mgr.BeginFrame();
 

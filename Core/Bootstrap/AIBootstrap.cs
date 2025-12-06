@@ -7,6 +7,7 @@ using Unity.Mathematics;
 using Unity.Collections;
 using UnityEngine;
 using TheWaningBorder.Core.Config;
+using EntityWorld = Unity.Entities.World;
 
 namespace TheWaningBorder.AI
 {
@@ -41,7 +42,7 @@ namespace TheWaningBorder.AI
         /// <param name="humanPlayerFaction">Faction controlled by human (typically Blue/0)</param>
         public static void InitializeAIPlayers(int totalPlayers, Faction humanPlayerFaction = Faction.Blue)
         {
-            var world = World.DefaultGameObjectInjectionWorld;
+            var world = EntityWorld.DefaultGameObjectInjectionWorld;
             if (world == null || !world.IsCreated)
             {
                 Debug.LogError("[AIBootstrap] No valid World exists!");
@@ -78,7 +79,7 @@ namespace TheWaningBorder.AI
             AIPersonality personality = AIPersonality.Balanced,
             AIDifficulty difficulty = AIDifficulty.Normal)
         {
-            var world = World.DefaultGameObjectInjectionWorld;
+            var world = EntityWorld.DefaultGameObjectInjectionWorld;
             if (world == null) return Entity.Null;
 
             return CreateAIBrain(world.EntityManager, faction, personality, difficulty);
@@ -89,7 +90,7 @@ namespace TheWaningBorder.AI
         /// </summary>
         public static void SetAIDifficulty(Faction faction, AIDifficulty difficulty)
         {
-            var world = World.DefaultGameObjectInjectionWorld;
+            var world = EntityWorld.DefaultGameObjectInjectionWorld;
             if (world == null) return;
 
             var em = world.EntityManager;
@@ -117,7 +118,7 @@ namespace TheWaningBorder.AI
         /// </summary>
         public static void SetAIPersonality(Faction faction, AIPersonality personality)
         {
-            var world = World.DefaultGameObjectInjectionWorld;
+            var world = EntityWorld.DefaultGameObjectInjectionWorld;
             if (world == null) return;
 
             var em = world.EntityManager;
@@ -145,7 +146,7 @@ namespace TheWaningBorder.AI
         /// </summary>
         public static void SetAIActive(Faction faction, bool active)
         {
-            var world = World.DefaultGameObjectInjectionWorld;
+            var world = EntityWorld.DefaultGameObjectInjectionWorld;
             if (world == null) return;
 
             var em = world.EntityManager;
@@ -173,7 +174,7 @@ namespace TheWaningBorder.AI
         /// </summary>
         public static void CleanupAllAI()
         {
-            var world = World.DefaultGameObjectInjectionWorld;
+            var world = EntityWorld.DefaultGameObjectInjectionWorld;
             if (world == null) return;
 
             var em = world.EntityManager;

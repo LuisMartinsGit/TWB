@@ -4,6 +4,7 @@
 
 using Unity.Entities;
 using Unity.Collections;
+using EntityWorld = Unity.Entities.World;
 
 namespace TheWaningBorder.Economy
 {
@@ -133,7 +134,7 @@ namespace TheWaningBorder.Economy
             current = 0;
             max = 0;
             
-            var world = World.DefaultGameObjectInjectionWorld;
+            var world = EntityWorld.DefaultGameObjectInjectionWorld;
             if (world == null) return false;
 
             var em = world.EntityManager;

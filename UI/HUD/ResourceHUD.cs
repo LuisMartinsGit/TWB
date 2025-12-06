@@ -9,6 +9,7 @@ using Unity.Mathematics;
 using UnityEngine;
 using EntityWorld = Unity.Entities.World;
 
+
 namespace TheWaningBorder.UI.HUD
 {
     /// <summary>
@@ -78,7 +79,7 @@ namespace TheWaningBorder.UI.HUD
             _cache.Clear();
             _popCache.Clear();
 
-            var world = _world ?? World.DefaultGameObjectInjectionWorld;
+            var world = _world ?? EntityWorld.DefaultGameObjectInjectionWorld;
             if (world == null || !world.IsCreated) return;
             _em = world.EntityManager;
 

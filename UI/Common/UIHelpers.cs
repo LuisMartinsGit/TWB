@@ -75,7 +75,7 @@ namespace TheWaningBorder.UI.Common
         /// <summary>
         /// Format a cost as a compact string.
         /// </summary>
-        public static string FormatCost(TheWaningBorder.Economy.Cost cost)
+        public static string FormatCost(TheWaningBorder.Core.Cost cost)
         {
             var sb = new System.Text.StringBuilder(64);
             

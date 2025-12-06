@@ -1,9 +1,12 @@
 // AICommandAdapter.cs
 // Adapter for AI systems to issue commands through the unified CommandRouter
+// Location: Assets/Scripts/AI/Core/AICommandAdapter.cs
+
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Collections;
 using TheWaningBorder.Core;
+using TheWaningBorder.Core.Commands;  // ← Required for CommandRouter
 
 namespace TheWaningBorder.AI
 {
@@ -202,37 +205,34 @@ namespace TheWaningBorder.AI
         /// <summary>
         /// Issue attack commands to all units in an army buffer against prioritized targets.
         /// </summary>
-        public static void EngageTargets(EntityManager em, DynamicBuffer<ArmyUnit> armyUnits,
-            NativeList<(Entity Entity, float3 Position, int Priority)> targets)
+        public static void AttackWithArmy(EntityManager em, DynamicBuffer<ArmyUnit> armyUnits, Entity target)
         {
             if (!ShouldAIIssueCommands()) return;
-            if (targets.Length == 0) return;
+            if (target == Entity.Null || !em.Exists(target)) return;
 
-            int targetIdx = 0;
             for (int i = 0; i < armyUnits.Length; i++)
             {
                 var unit = armyUnits[i].Unit;
                 if (unit == Entity.Null || !em.Exists(unit)) continue;
 
-                if (targetIdx < targets.Length)
-                {
-                    var target = targets[targetIdx];
-                    if (target.Entity != Entity.Null && em.Exists(target.Entity))
-                    {
-                        CommandRouter.IssueAttack(em, unit, target.Entity, CommandRouter.CommandSource.AI);
-                    }
-
-                    targetIdx = (targetIdx + 1) % targets.Length;
-                }
+                CommandRouter.IssueAttack(em, unit, target, CommandRouter.CommandSource.AI);
             }
         }
-    }
 
-    // ==================== Army Unit Buffer ====================
+        /// <summary>
+        /// Issue stop commands to all units in an army.
+        /// </summary>
+        public static void StopArmy(EntityManager em, DynamicBuffer<ArmyUnit> armyUnits)
+        {
+            if (!ShouldAIIssueCommands()) return;
 
-    public struct ArmyUnit : IBufferElementData
-    {
-        public Entity Unit;
-        public int Strength;
+            for (int i = 0; i < armyUnits.Length; i++)
+            {
+                var unit = armyUnits[i].Unit;
+                if (unit == Entity.Null || !em.Exists(unit)) continue;
+
+                CommandRouter.IssueStop(em, unit, CommandRouter.CommandSource.AI);
+            }
+        }
     }
 }

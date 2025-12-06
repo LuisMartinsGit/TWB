@@ -1,6 +1,5 @@
 using System;
 using UnityEngine;
-using TheWaningBorder.World.FogOfWar;
 
 namespace TheWaningBorder.World.FogOfWar
 {

@@ -4,6 +4,7 @@ using Unity.Collections;
 using Unity.Transforms;
 using Unity.Mathematics;
 using UnityEngine;
+using EntityWorld = Unity.Entities.World;
 
 namespace TheWaningBorder.Systems.Visibility
 {
@@ -31,7 +32,7 @@ namespace TheWaningBorder.Systems.Visibility
             var mgr = FogOfWarManager.Instance;
             if (mgr == null) return;
 
-            var em = World.DefaultGameObjectInjectionWorld.EntityManager;
+            var em = EntityWorld.DefaultGameObjectInjectionWorld.EntityManager;
 
             // Begin new frame - clears current visibility
             mgr.BeginFrame();
@@ -115,7 +116,7 @@ namespace TheWaningBorder.Systems.Visibility
             var entityViewManager = Object.FindObjectOfType<EntityViewManager>();
             if (entityViewManager == null) return;
 
-            var em = World.DefaultGameObjectInjectionWorld.EntityManager;
+            var em = EntityWorld.DefaultGameObjectInjectionWorld.EntityManager;
             
             // Query entities with presentation
             var query = em.CreateEntityQuery(

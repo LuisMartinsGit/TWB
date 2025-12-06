@@ -13,6 +13,7 @@ using Unity.Mathematics;
 using Unity.Collections;
 using TheWaningBorder.Core.Multiplayer;
 using TheWaningBorder.Core.Commands;
+using EntityWorld = Unity.Entities.World;
 
 namespace TheWaningBorder.Multiplayer
 {
@@ -356,7 +357,7 @@ namespace TheWaningBorder.Multiplayer
 
         private void ExecuteCommand(LockstepCommand cmd)
         {
-            var world = World.DefaultGameObjectInjectionWorld;
+            var world = EntityWorld.DefaultGameObjectInjectionWorld;
             if (world == null || !world.IsCreated) return;
 
             var em = world.EntityManager;
@@ -428,7 +429,7 @@ namespace TheWaningBorder.Multiplayer
 
         private Entity FindEntityByNetworkId(int networkId)
         {
-            var world = World.DefaultGameObjectInjectionWorld;
+            var world = EntityWorld.DefaultGameObjectInjectionWorld;
             if (world == null || !world.IsCreated) return Entity.Null;
 
             var em = world.EntityManager;
