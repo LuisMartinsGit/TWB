@@ -1,6 +1,7 @@
 // File: Assets/Scripts/UI/Menus/MainMenuUI.cs
 // Central manager for the main menu system
 
+using TheWaningBorder.Core.Config;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 

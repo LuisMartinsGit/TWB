@@ -8,9 +8,10 @@ using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
 using Unity.Collections;
-using TheWaningBorder.Core;
 using TheWaningBorder.Core.Commands;     // ← ADD: for CommandRouter
 using EntityWorld = Unity.Entities.World;
+using TheWaningBorder.UI.Panels;
+using TheWaningBorder.Entities;
 
 namespace TheWaningBorder.Input
 {
@@ -204,7 +205,8 @@ namespace TheWaningBorder.Input
                 if (!_em.Exists(e)) continue;
                 if (!_em.HasComponent<BuildingTag>(e)) continue;
 
-                CommandRouter.SetRallyPoint(e, position, CommandRouter.CommandSource.LocalPlayer);
+                CommandRouter.SetRallyPoint(_em, e, position, CommandRouter.CommandSource.LocalPlayer);
+
             }
         }
         
@@ -215,7 +217,7 @@ namespace TheWaningBorder.Input
                 if (!_em.Exists(e)) continue;
                 if (_em.HasComponent<BuildingTag>(e)) continue; // Buildings can't attack-move
 
-                CommandRouter.IssueAttack(e, target, CommandRouter.CommandSource.LocalPlayer);
+                CommandRouter.IssueAttack(_em, e, target, CommandRouter.CommandSource.LocalPlayer);
             }
         }
         
@@ -226,7 +228,7 @@ namespace TheWaningBorder.Input
                 if (!_em.Exists(e)) continue;
                 if (!CanHeal(e)) continue;
 
-                CommandRouter.IssueHeal(e, target, CommandRouter.CommandSource.LocalPlayer);
+                CommandRouter.IssueHeal(_em, e, target, CommandRouter.CommandSource.LocalPlayer);
             }
         }
         
@@ -237,9 +239,9 @@ namespace TheWaningBorder.Input
             foreach (var e in SelectionSystem.CurrentSelection)
             {
                 if (!_em.Exists(e)) continue;
-                if (!_em.HasComponent<TheWaningBorder.Humans.MinerTag>(e)) continue;
+                if (!_em.HasComponent<Entities.MinerTag>(e)) continue;
 
-                CommandRouter.IssueGather(e, resourceNode, depositLocation, CommandRouter.CommandSource.LocalPlayer);
+                CommandRouter.IssueGather(_em, e, resourceNode, depositLocation, CommandRouter.CommandSource.LocalPlayer);
             }
         }
         
@@ -288,7 +290,7 @@ namespace TheWaningBorder.Input
                 
                 float3 slot = topLeft + rightF3 * (col * formationSpacing) - forward * (row * formationSpacing);
                 
-                CommandRouter.IssueMove(e, slot, CommandRouter.CommandSource.LocalPlayer);
+                CommandRouter.IssueMove(_em, e, slot, CommandRouter.CommandSource.LocalPlayer);
                 idx++;
             }
         }
@@ -347,7 +349,7 @@ namespace TheWaningBorder.Input
                     caps.CanAttack = true;
 
                 // Can gather if is a miner
-                if (_em.HasComponent<TheWaningBorder.Humans.MinerTag>(e))
+                if (_em.HasComponent<Entities.MinerTag>(e))
                     caps.CanGather = true;
 
                 // Can heal if has heal capability (Litharch, etc.)

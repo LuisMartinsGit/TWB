@@ -6,6 +6,7 @@ using Unity.Mathematics;
 using Unity.Transforms;
 using TheWaningBorder.Entities;
 using TheWaningBorder.Economy;
+using TheWaningBorder.AI;
 namespace TheWaningBorder.Systems.Work
 {
     /// <summary>
@@ -182,7 +183,7 @@ namespace TheWaningBorder.Systems.Work
         private static Entity FindNearestDeposit(EntityManager em, float3 pos)
         {
             var query = em.CreateEntityQuery(
-                ComponentType.ReadOnly<IronDepositTag>(),
+                ComponentType.ReadOnly<IronMineTag>(),
                 ComponentType.ReadOnly<IronDepositState>(),
                 ComponentType.ReadOnly<LocalTransform>()
             );

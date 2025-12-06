@@ -5,6 +5,8 @@ using Unity.Transforms;
 using Unity.Mathematics;
 using UnityEngine;
 using EntityWorld = Unity.Entities.World;
+using TheWaningBorder.World.FogOfWar;
+using TheWaningBorder.Presentation;
 
 namespace TheWaningBorder.Systems.Visibility
 {
@@ -113,7 +115,7 @@ namespace TheWaningBorder.Systems.Visibility
             if (mgr == null) return;
 
             var humanFaction = mgr.HumanFaction;
-            var entityViewManager = Object.FindObjectOfType<EntityViewManager>();
+            var entityViewManager = Object.FindFirstObjectByType<EntityViewManager>();
             if (entityViewManager == null) return;
 
             var em = EntityWorld.DefaultGameObjectInjectionWorld.EntityManager;

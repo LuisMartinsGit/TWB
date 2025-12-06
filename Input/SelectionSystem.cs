@@ -9,6 +9,7 @@ using Unity.Mathematics;
 using Unity.Transforms;
 using Unity.Collections;
 using EntityWorld = Unity.Entities.World;
+using TheWaningBorder.UI.Panels;
 
 namespace TheWaningBorder.Input
 {

@@ -6,7 +6,8 @@ using Unity.Entities;
 using Unity.Collections;
 using TheWaningBorder.Economy;
 using TheWaningBorder.UI;
-using TheWaningBorder.Core; 
+using TheWaningBorder.Core;
+using TheWaningBorder.UI.Common;
 
 namespace TheWaningBorder.UI.Panels
 {
@@ -351,7 +352,7 @@ namespace TheWaningBorder.UI.Panels
         public static bool IsPointerOver()
         {
             if (!PanelVisible) return false;
-            var mousePos = Input.mousePosition;
+            var mousePos = UnityEngine.Input.mousePosition;
             var screenRect = new Rect(
                 PanelRect.x,
                 Screen.height - PanelRect.y - PanelRect.height,

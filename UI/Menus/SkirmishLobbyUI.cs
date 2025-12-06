@@ -4,6 +4,7 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using System;
+using TheWaningBorder.Multiplayer;
 
 namespace TheWaningBorder.UI.Menus
 {

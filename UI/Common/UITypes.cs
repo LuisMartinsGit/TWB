@@ -4,19 +4,34 @@ using TheWaningBorder.Core;
 
 namespace TheWaningBorder.UI
 {
-    /// <summary>
-    /// Display information for an entity in the UI.
-    /// </summary>
-    public struct EntityDisplayInfo
-    {
-        public string Name;
-        public string Type;
-        public string Description;
-        public Texture2D Portrait;
-        public int CurrentHP;
-        public int MaxHP;
-        public string Faction;
-    }
+/// <summary>
+/// Display information for an entity in the UI.
+/// </summary>
+
+public struct EntityDisplayInfo
+{
+    // Identity
+    public string Name;
+    public string Type;
+    public string Description;
+    public Texture2D Portrait;
+    public string Faction;
+    
+    // Health (nullable - not all entities have health)
+    public int? CurrentHealth;
+    public int? MaxHealth;
+    
+    // Combat stats (nullable)
+    public bool HasCombatStats;
+    public int? Attack;
+    public int? Defense;
+    public float? Speed;
+    
+    // Resource generation (for buildings)
+    public bool HasResourceGeneration;
+    public int? SuppliesPerMinute;
+    public int? IronPerMinute;
+}
 
     /// <summary>
     /// Action panel information for an entity.
@@ -60,4 +75,5 @@ namespace TheWaningBorder.UI
         public float Total;
         public int QueuePosition;
     }
+    
 }

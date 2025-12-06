@@ -260,7 +260,7 @@ namespace TheWaningBorder.AI
                 {
                     if (zone.IsExplored == 0 || elapsedTime - zone.LastVisitedTime > 1f)
                     {
-                        zone.LastVisitedTime = elapsedTime;
+                        zone.LastVisitedTime = (float)elapsedTime;
                         zone.IsExplored = 1;
                         zone.VisitCount++;
                         zones[assignment.AssignedZoneIndex] = zone;

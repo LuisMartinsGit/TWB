@@ -8,6 +8,8 @@ using Unity.Transforms;
 using TheWaningBorder.Economy;
 using TheWaningBorder.Entities;
 using EntityWorld = Unity.Entities.World;
+using TheWaningBorder.Input;
+using TheWaningBorder.Data;
 
 namespace TheWaningBorder.UI.Panels
 {
@@ -76,7 +78,7 @@ namespace TheWaningBorder.UI.Panels
                     _placingInstance.transform.position = p + Vector3.up * yOffset;
 
                 // Confirm placement
-                if (Input.GetMouseButtonDown(0))
+                if (UnityEngine.Input.GetMouseButtonDown(0))
                 {
                     var pos = _placingInstance.transform.position;
                     SpawnSelectedBuilding((float3)pos);
@@ -85,7 +87,7 @@ namespace TheWaningBorder.UI.Panels
                 }
 
                 // Cancel
-                if (Input.GetMouseButtonDown(1) || Input.GetKeyDown(KeyCode.Escape))
+                if (UnityEngine.Input.GetMouseButtonDown(1) || UnityEngine.Input.GetKeyDown(KeyCode.Escape))
                 {
                     CancelPlacement();
                 }
@@ -219,7 +221,7 @@ namespace TheWaningBorder.UI.Panels
 
         private Faction GetSelectedFactionOrDefault()
         {
-            var sel = RTSInput.CurrentSelection;
+            var sel = SelectionSystem.CurrentSelection;
             if (sel != null && sel.Count > 0)
             {
                 var e = sel[0];
@@ -246,7 +248,7 @@ namespace TheWaningBorder.UI.Panels
             var cam = Camera.main;
             if (!cam) return false;
 
-            Ray ray = cam.ScreenPointToRay(Input.mousePosition);
+            Ray ray = cam.ScreenPointToRay(UnityEngine.Input.mousePosition);
 
             if (Physics.Raycast(ray, out var hit, 10000f, placementMask, QueryTriggerInteraction.Ignore))
             {
@@ -280,7 +282,7 @@ namespace TheWaningBorder.UI.Panels
         public static bool IsPointerOverPanel()
         {
             if (!PanelVisible) return false;
-            return PanelRectScreenBL.Contains(Input.mousePosition);
+            return PanelRectScreenBL.Contains(UnityEngine.Input.mousePosition);
         }
     }
 }

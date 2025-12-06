@@ -148,7 +148,7 @@ namespace TheWaningBorder.UI.HUD
                 if (factionCount >= 8) break;
             }
 
-            IsPointerOverTopBar = RTSInput.mousePosition.y >= Screen.height - (topBarHeight + 4f) * factionCount;
+            IsPointerOverTopBar = UnityEngine.Input.mousePosition.y >= Screen.height - (topBarHeight + 4f) * factionCount;
         }
 
         private void DrawFactionBar(Faction faction, float yOffset)

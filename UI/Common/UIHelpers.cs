@@ -4,6 +4,7 @@
 using UnityEngine;
 using Unity.Entities;
 using EntityWorld = Unity.Entities.World;
+using TheWaningBorder.Input;
 
 namespace TheWaningBorder.UI.Common
 {
@@ -49,7 +50,7 @@ namespace TheWaningBorder.UI.Common
         /// </summary>
         public static bool IsMouseOverRect(Rect guiRect)
         {
-            var mousePos = Input.mousePosition;
+            var mousePos = UnityEngine.Input.mousePosition;
             var screenRect = new Rect(
                 guiRect.x,
                 Screen.height - guiRect.y - guiRect.height,
@@ -212,7 +213,7 @@ namespace TheWaningBorder.UI.Common
         /// </summary>
         public static Entity GetFirstSelectedEntity()
         {
-            var sel = RTSInput.CurrentSelection;
+            var sel = SelectionSystem.CurrentSelection;
             if (sel == null || sel.Count == 0) return Entity.Null;
 
             var manager = GetEntityManager();
