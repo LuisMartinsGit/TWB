@@ -18,7 +18,8 @@ public struct BuildingTag : IComponentData
 }
 
 // ==================== Era 1 Building Tags ====================
-
+/// <summary>Main base/hall building marker.</summary>
+public struct HallTag : IComponentData { }
 /// <summary>Resource collection building.</summary>
 public struct GathererHutTag : IComponentData { }
 

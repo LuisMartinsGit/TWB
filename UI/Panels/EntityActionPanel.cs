@@ -137,7 +137,7 @@ namespace TheWaningBorder.UI.Panels
 
             GUI.enabled = !BuilderCommandPanel.IsPlacingBuilding;
 
-            DrawActionGrid(entity, actionInfo.Actions, (button) =>
+            DrawActionGrid(entity, actionInfo.Actions.ToArray(), (button) =>
             {
                 BuilderCommandPanel.TriggerBuildingPlacement(button.Id);
             });
@@ -173,7 +173,7 @@ namespace TheWaningBorder.UI.Panels
             GUILayout.Label("Train Units", _headerStyle);
             GUILayout.Space(8);
 
-            DrawActionGrid(entity, actionInfo.Actions, (button) =>
+            DrawActionGrid(entity, actionInfo.Actions.ToArray(), (button) =>
             {
                 var em = UnifiedUIManager.GetEntityManager();
                 if (!em.Exists(entity)) return;

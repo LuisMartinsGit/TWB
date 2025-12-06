@@ -3,11 +3,9 @@
 // Location: Assets/Scripts/UI/Common/EntityExtractors.cs
 
 using System.Collections.Generic;
-using UnityEngine;
 using Unity.Entities;
-using Unity.Collections;
 using TheWaningBorder.Core;
-using TheWaningBorder.Data;
+using TheWaningBorder.Economy;
 
 namespace TheWaningBorder.UI
 {
@@ -46,7 +44,7 @@ namespace TheWaningBorder.UI
             if (em.HasComponent<Health>(entity))
             {
                 var health = em.GetComponentData<Health>(entity);
-                info.CurrentHealth = (int)health.Current;
+                info.CurrentHealth = (int)health.Value;
                 info.MaxHealth = (int)health.Max;
             }
 

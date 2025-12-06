@@ -55,6 +55,15 @@ public sealed class TechTreeDB : MonoBehaviour
     public IReadOnlyDictionary<string, BuildingDef> AllBuildings => _buildingsById;
     public IReadOnlyDictionary<string, TechnologyDef> AllTechnologies => _technologiesById;
     public IReadOnlyDictionary<string, SectDef> AllSects => _sectsById;
+    /// <summary>
+    /// Get all building definitions.
+    /// </summary>
+    public IEnumerable<BuildingDef> GetAllBuildings() => _buildingsById.Values;
+
+    /// <summary>
+    /// Get all unit definitions.
+    /// </summary>
+    public IEnumerable<UnitDef> GetAllUnits() => _unitsById.Values;
 
     // ═══════════════════════════════════════════════════════════════════════
     // LIFECYCLE

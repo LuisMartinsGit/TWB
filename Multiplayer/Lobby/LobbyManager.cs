@@ -792,7 +792,13 @@ namespace TheWaningBorder.Multiplayer
             AIDifficulty = LobbyAIDifficulty.Normal;
             PlayerName = "";
         }
-
+        /// <summary>
+        /// Get the display name for this slot's faction.
+        /// </summary>
+        public string GetFactionName()
+        {
+            return Faction.ToString();
+        }
         public Color GetFactionColor()
         {
             return Faction switch

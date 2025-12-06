@@ -16,7 +16,7 @@ public enum SpawnLayout
 {
     Circle,          // Evenly spaced around a ring
     TwoSides,        // Players split across two sides
-    TwoEachSide8     // 2 players per side (up to 8 total)
+    TwoEachSide8,     // 2 players per side (up to 8 total)
 }
 
 public enum TwoSidesPreset
@@ -162,4 +162,5 @@ public static class GameSettings
     {
         return NetworkRole == NetworkRole.Client;
     }
+    
 }

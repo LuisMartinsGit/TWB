@@ -40,6 +40,7 @@ public struct EntityDisplayInfo
     {
         public ActionType Type;
         public List<ActionButton> Actions;
+        public TrainingInfo? TrainingState;
     }
 
     /// <summary>
@@ -63,6 +64,7 @@ public struct EntityDisplayInfo
         public Cost Cost;
         public bool Enabled;
         public Texture2D Icon;
+        public bool CanAfford;  // ADD THIS
     }
 
     /// <summary>
@@ -74,6 +76,8 @@ public struct EntityDisplayInfo
         public float Progress;
         public float Total;
         public int QueuePosition;
+        public string CurrentUnitId;   // ADD THIS
+        public float TimeRemaining;    // ADD THIS
     }
     
 }

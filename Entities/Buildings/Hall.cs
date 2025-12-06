@@ -61,6 +61,7 @@ namespace TheWaningBorder.Entities
             
             // Add training queue buffer
             em.AddBuffer<TrainQueueItem>(entity);
+            em.AddComponent<HallTag>(entity);
 
             return entity;
         }
@@ -99,5 +100,6 @@ namespace TheWaningBorder.Entities
 
             return entity;
         }
+
     }
 }

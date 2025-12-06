@@ -9,11 +9,11 @@ using System.Net.Sockets;
 using System.Text;
 using UnityEngine;
 using Unity.Entities;
-using Unity.Mathematics;
 using Unity.Collections;
 using TheWaningBorder.Core.Multiplayer;
 using TheWaningBorder.Core.Commands;
 using EntityWorld = Unity.Entities.World;
+using TheWaningBorder.Core.Commands.Types;
 
 namespace TheWaningBorder.Multiplayer
 {
@@ -51,7 +51,7 @@ namespace TheWaningBorder.Multiplayer
         public const float TICK_DURATION = 1f / TICKS_PER_SECOND;
         public const int INPUT_DELAY_TICKS = 2;
         public const int MAX_TICK_BUFFER = 60;
-
+        private Faction _localFaction;
         // ═══════════════════════════════════════════════════════════════════════
         // NETWORK STATE
         // ═══════════════════════════════════════════════════════════════════════
@@ -201,11 +201,12 @@ namespace TheWaningBorder.Multiplayer
         /// <summary>
         /// Initialize as client
         /// </summary>
-        public void InitializeAsClient(int localPort, string hostIP, int hostPort, int playerIndex)
+        public void InitializeAsClient(int localPort, string hostIP, int hostPort, int playerIndex, Faction faction)
         {
             _isHost = false;
             _localPlayerIndex = playerIndex;
             _localPort = localPort;
+            _localFaction = faction; 
             
             var hostPlayer = new RemotePlayer
             {
@@ -633,7 +634,7 @@ namespace TheWaningBorder.Multiplayer
         {
             uint checksum = 0;
             
-            var world = World.DefaultGameObjectInjectionWorld;
+            var world = EntityWorld.DefaultGameObjectInjectionWorld;
             if (world == null || !world.IsCreated) return checksum;
 
             var em = world.EntityManager;

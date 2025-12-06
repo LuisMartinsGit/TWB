@@ -123,8 +123,8 @@ namespace TheWaningBorder.UI.Menus
                 _layout = SpawnLayout.Circle;
             if (GUILayout.Toggle(_layout == SpawnLayout.TwoSides, " Two Sides", "Button"))
                 _layout = SpawnLayout.TwoSides;
-            if (GUILayout.Toggle(_layout == SpawnLayout.FreeForAll, " Free For All", "Button"))
-                _layout = SpawnLayout.FreeForAll;
+            if (GUILayout.Toggle(_layout == SpawnLayout.Circle, " Free For All", "Button"))
+                _layout = SpawnLayout.Circle;
             GUILayout.EndHorizontal();
 
             // Two sides preset
@@ -132,10 +132,10 @@ namespace TheWaningBorder.UI.Menus
             {
                 GUILayout.BeginHorizontal();
                 GUILayout.Label("Preset:", GUILayout.Width(60));
-                if (GUILayout.Toggle(_twoSides == TwoSidesPreset.EastWest, " E/W", "Button"))
-                    _twoSides = TwoSidesPreset.EastWest;
-                if (GUILayout.Toggle(_twoSides == TwoSidesPreset.NorthSouth, " N/S", "Button"))
-                    _twoSides = TwoSidesPreset.NorthSouth;
+                if (GUILayout.Toggle(_twoSides == TwoSidesPreset.LeftRight, " E/W", "Button"))
+                    _twoSides = TwoSidesPreset.LeftRight;
+                if (GUILayout.Toggle(_twoSides == TwoSidesPreset.UpDown, " N/S", "Button"))
+                    _twoSides = TwoSidesPreset.UpDown;
                 GUILayout.EndHorizontal();
             }
 
