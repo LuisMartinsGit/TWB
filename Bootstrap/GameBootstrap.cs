@@ -6,11 +6,10 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using TheWaningBorder.Input;  // Contains GameCamera
-using TheWaningBorder.AI;
-using TheWaningBorder.UI;
-using TheWaningBorder.Economy;
-using TheWaningBorder.Data;
 using TheWaningBorder.Core.Config;
+using TheWaningBorder.World.Terrain;
+using TheWaningBorder.Economy;
+using TheWaningBorder.Presentation;
 
 namespace TheWaningBorder.Bootstrap
 {
@@ -115,6 +114,8 @@ namespace TheWaningBorder.Bootstrap
 
             var managersGO = new GameObject("RuntimeManagers");
             managersGO.AddComponent<RuntimeManagers>();
+            managersGO.AddComponent<EntityViewManager>();        // Add this
+            managersGO.AddComponent<PresentationSpawnSystem>();  // Add this
             Object.DontDestroyOnLoad(managersGO);
             Debug.Log("[GameBootstrap] Created RuntimeManagers");
         }
@@ -125,15 +126,20 @@ namespace TheWaningBorder.Bootstrap
 
         private static void InitializeWorld()
         {
+            // Create procedural terrain
+            var existingTerrain = Object.FindFirstObjectByType<ProceduralTerrain>();
+            if (existingTerrain == null)
+            {
+                var terrainGO = new GameObject("ProceduralTerrain");
+                terrainGO.AddComponent<TheWaningBorder.World.Terrain.ProceduralTerrain>();
+                Debug.Log("[GameBootstrap] Created ProceduralTerrain");
+            }
+
             // Initialize fog of war if enabled
             if (GameSettings.FogOfWarEnabled)
             {
-                // FogOfWarManager.Initialize(GameSettings.MapHalfSize * 2);
                 Debug.Log("[GameBootstrap] Fog of war initialization placeholder");
             }
-
-            // Initialize terrain (placeholder for procedural generation)
-            Debug.Log("[GameBootstrap] World initialization placeholder");
         }
 
         // ═══════════════════════════════════════════════════════════════
@@ -142,14 +148,12 @@ namespace TheWaningBorder.Bootstrap
 
         private static void InitializeFactions()
         {
-            for (int i = 0; i < GameSettings.TotalPlayers; i++)
-            {
-                var slot = LobbyConfig.Slots[i];
-                if (slot != null && slot.Type != SlotType.Empty)  // Changed from IsOccupied
-                {
-                    Debug.Log($"[GameBootstrap] Initialized faction {slot.Faction}");
-                }
-            }
+            // Initialize economy banks first
+            EconomyBootstrap.EnsureFactionBanks(GameSettings.TotalPlayers);
+
+            // Spawn players after terrain is ready (use coroutine)
+            var helper = new GameObject("SpawnHelper").AddComponent<SpawnDelayHelper>();
+            helper.StartCoroutine(helper.WaitForTerrainAndSpawn());
         }
 
         // ═══════════════════════════════════════════════════════════════
