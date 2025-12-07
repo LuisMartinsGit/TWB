@@ -1,6 +1,6 @@
 // CameraController.cs
-// Modern RTS Camera System with Rig Architecture
-// Part of: Input/
+// Modern RTS Camera System with Rig Architecture and Terrain Following
+// Location: Assets/Scripts/Input/CameraController.cs
 
 using UnityEngine;
 
@@ -23,6 +23,7 @@ namespace TheWaningBorder.Input
     /// - R/F tilt control
     /// - Smooth damping on all axes
     /// - World bounds clamping
+    /// - Terrain height following
     /// - Minimap click support (MoveToPosition)
     /// </summary>
     public class CameraController : MonoBehaviour
@@ -38,13 +39,13 @@ namespace TheWaningBorder.Input
         [Header("Movement")]
         public float keyboardSpeed = 25f;
         public float edgeScrollSpeed = 30f;
-        public float edgeScrollBorder = 15f; // pixels from screen edge
-        public float panSpeed = 1f;          // Middle mouse sensitivity
+        public float edgeScrollBorder = 15f;
+        public float panSpeed = 1f;
         public float moveDamping = 0.15f;
         
         [Header("Zoom")]
         public float zoomSpeed = 10f;
-        public float minZoom = 15f;  // Camera distance from rig
+        public float minZoom = 15f;
         public float maxZoom = 80f;
         public float zoomDamping = 0.2f;
         
@@ -55,13 +56,18 @@ namespace TheWaningBorder.Input
         
         [Header("Tilt")]
         public float tiltSpeed = 30f;
-        public float minTilt = 30f;  // degrees
+        public float minTilt = 30f;
         public float maxTilt = 75f;
         public float tiltDamping = 0.15f;
         
+        [Header("Terrain Following")]
+        public bool followTerrain = true;
+        public float heightOffset = 2f;
+        public float heightDamping = 0.1f;
+        
         [Header("World Bounds")]
-        public Vector2 worldMin = new Vector2(-125, -125);
-        public Vector2 worldMax = new Vector2(125, 125);
+        public Vector2 worldMin = new Vector2(-256, -256);
+        public Vector2 worldMax = new Vector2(256, 256);
         
         [Header("Debug")]
         public bool showDebugInfo = false;
@@ -72,10 +78,14 @@ namespace TheWaningBorder.Input
         
         private Transform _arm;
         private Transform _camTransform;
+        private Terrain _terrain;
         
         // Position
         private Vector3 _targetPosition;
         private Vector3 _velocity = Vector3.zero;
+        private float _currentHeight;
+        private float _targetHeight;
+        private float _heightVelocity;
         
         // Zoom
         private float _currentZoom;
@@ -103,12 +113,14 @@ namespace TheWaningBorder.Input
         void Start()
         {
             InitializeCameraRig();
+            FindTerrain();
             
             // Initialize from current state
             _targetPosition = transform.position;
             _currentZoom = _targetZoom = _camTransform.localPosition.magnitude;
             _currentRotation = _targetRotation = transform.eulerAngles.y;
             _currentTilt = _targetTilt = _arm.localEulerAngles.x;
+            _currentHeight = _targetHeight = transform.position.y;
 
             ClampPositionToBounds(ref _targetPosition);
         }
@@ -184,6 +196,58 @@ namespace TheWaningBorder.Input
             }
         }
         
+        private void FindTerrain()
+        {
+            // Try to find the procedural terrain
+            var go = GameObject.Find("ProcTerrain");
+            if (go != null)
+            {
+                _terrain = go.GetComponent<Terrain>();
+            }
+            
+            // Fallback to active terrain
+            if (_terrain == null)
+            {
+                _terrain = Terrain.activeTerrain;
+            }
+            
+            if (_terrain != null)
+            {
+                Debug.Log($"[CameraController] Found terrain: {_terrain.name}");
+            }
+        }
+        
+        // ═══════════════════════════════════════════════════════════════════════
+        // TERRAIN HEIGHT
+        // ═══════════════════════════════════════════════════════════════════════
+        
+        private float GetTerrainHeight(float x, float z)
+        {
+            // Try cached terrain first
+            if (_terrain != null && _terrain.terrainData != null)
+            {
+                return _terrain.SampleHeight(new Vector3(x, 0, z)) + _terrain.transform.position.y;
+            }
+            
+            // Find terrain if not cached
+            if (_terrain == null)
+            {
+                FindTerrain();
+                if (_terrain != null && _terrain.terrainData != null)
+                {
+                    return _terrain.SampleHeight(new Vector3(x, 0, z)) + _terrain.transform.position.y;
+                }
+            }
+            
+            // Fallback: raycast
+            if (Physics.Raycast(new Vector3(x, 500f, z), Vector3.down, out RaycastHit hit, 1000f))
+            {
+                return hit.point.y;
+            }
+            
+            return 0f;
+        }
+        
         // ═══════════════════════════════════════════════════════════════════════
         // MOVEMENT
         // ═══════════════════════════════════════════════════════════════════════
@@ -208,36 +272,37 @@ namespace TheWaningBorder.Input
                 ClampPositionToBounds(ref _targetPosition);
             }
         }
-
+        
         private void HandleEdgeScrolling()
         {
+            if (!Application.isFocused) return;
+            
             Vector3 mousePos = UnityEngine.Input.mousePosition;
-            Vector3 edgeMove = Vector3.zero;
+            Vector3 moveDir = Vector3.zero;
             
-            if (mousePos.x < edgeScrollBorder) 
-                edgeMove.x = -1f;
-            else if (mousePos.x > Screen.width - edgeScrollBorder) 
-                edgeMove.x = 1f;
+            if (mousePos.x < edgeScrollBorder)
+                moveDir.x = -1f;
+            else if (mousePos.x > Screen.width - edgeScrollBorder)
+                moveDir.x = 1f;
             
-            if (mousePos.y < edgeScrollBorder) 
-                edgeMove.z = -1f;
-            else if (mousePos.y > Screen.height - edgeScrollBorder) 
-                edgeMove.z = 1f;
+            if (mousePos.y < edgeScrollBorder)
+                moveDir.z = -1f;
+            else if (mousePos.y > Screen.height - edgeScrollBorder)
+                moveDir.z = 1f;
             
-            if (edgeMove.sqrMagnitude > 0.01f)
+            if (moveDir.sqrMagnitude > 0.01f)
             {
                 Vector3 forward = Vector3.ProjectOnPlane(transform.forward, Vector3.up).normalized;
                 Vector3 right = Vector3.ProjectOnPlane(transform.right, Vector3.up).normalized;
                 
-                Vector3 moveDir = (forward * edgeMove.z + right * edgeMove.x).normalized;
-                _targetPosition += moveDir * edgeScrollSpeed * Time.deltaTime;
+                Vector3 worldMove = (forward * moveDir.z + right * moveDir.x).normalized;
+                _targetPosition += worldMove * edgeScrollSpeed * Time.deltaTime;
                 ClampPositionToBounds(ref _targetPosition);
             }
         }
-
+        
         private void HandleMousePan()
         {
-            // Middle mouse button for panning
             if (UnityEngine.Input.GetMouseButtonDown(2))
             {
                 _lastMousePanPos = UnityEngine.Input.mousePosition;
@@ -247,11 +312,10 @@ namespace TheWaningBorder.Input
                 Vector3 delta = UnityEngine.Input.mousePosition - _lastMousePanPos.Value;
                 _lastMousePanPos = UnityEngine.Input.mousePosition;
                 
-                Vector3 right = Vector3.ProjectOnPlane(transform.right, Vector3.up).normalized;
                 Vector3 forward = Vector3.ProjectOnPlane(transform.forward, Vector3.up).normalized;
+                Vector3 right = Vector3.ProjectOnPlane(transform.right, Vector3.up).normalized;
                 
-                Vector3 move = (-right * delta.x - forward * delta.y) * panSpeed * (_currentZoom / 40f);
-                _targetPosition += move;
+                _targetPosition -= (right * delta.x + forward * delta.y) * panSpeed * 0.1f;
                 ClampPositionToBounds(ref _targetPosition);
             }
             else if (UnityEngine.Input.GetMouseButtonUp(2))
@@ -266,30 +330,11 @@ namespace TheWaningBorder.Input
         
         private void HandleRotation()
         {
-            // Keyboard rotation
             if (UnityEngine.Input.GetKey(KeyCode.Q))
                 _targetRotation -= rotationSpeed * Time.deltaTime;
             
             if (UnityEngine.Input.GetKey(KeyCode.E))
                 _targetRotation += rotationSpeed * Time.deltaTime;
-            
-            // Right mouse drag rotation (optional - can conflict with commands)
-            // Uncomment if you want right-drag rotation instead of commands
-            /*
-            if (UnityEngine.Input.GetMouseButtonDown(1))
-            {
-                _isRotatingWithMouse = true;
-            }
-            else if (UnityEngine.Input.GetMouseButton(1) && _isRotatingWithMouse)
-            {
-                float mouseDelta = UnityEngine.Input.GetAxis("Mouse X");
-                _targetRotation += mouseDelta * mouseRotationSpeed * 100f * Time.deltaTime;
-            }
-            else if (UnityEngine.Input.GetMouseButtonUp(1))
-            {
-                _isRotatingWithMouse = false;
-            }
-            */
         }
         
         // ═══════════════════════════════════════════════════════════════════════
@@ -325,9 +370,24 @@ namespace TheWaningBorder.Input
         
         private void ApplySmoothMovement()
         {
-            // Position (rig stays at ground level Y=0)
-            transform.position = Vector3.SmoothDamp(transform.position, _targetPosition, ref _velocity, moveDamping);
-            transform.position = new Vector3(transform.position.x, 0f, transform.position.z);
+            // Horizontal position
+            Vector3 currentPos = transform.position;
+            Vector3 targetPos = new Vector3(_targetPosition.x, currentPos.y, _targetPosition.z);
+            Vector3 newPos = Vector3.SmoothDamp(currentPos, targetPos, ref _velocity, moveDamping);
+            
+            // Terrain following
+            if (followTerrain)
+            {
+                _targetHeight = GetTerrainHeight(newPos.x, newPos.z) + heightOffset;
+                _currentHeight = Mathf.SmoothDamp(_currentHeight, _targetHeight, ref _heightVelocity, heightDamping);
+                newPos.y = _currentHeight;
+            }
+            else
+            {
+                newPos.y = heightOffset;
+            }
+            
+            transform.position = newPos;
             
             // Rotation (Y-axis)
             _currentRotation = Mathf.SmoothDampAngle(_currentRotation, _targetRotation, ref _rotationVelocity, rotationDamping);
@@ -355,8 +415,6 @@ namespace TheWaningBorder.Input
         /// <summary>
         /// Move the camera to a world position (used by minimap clicks).
         /// </summary>
-        /// <param name="worldPos">Target world position</param>
-        /// <param name="instant">If true, snap immediately without smoothing</param>
         public void MoveToPosition(Vector3 worldPos, bool instant = false)
         {
             _targetPosition = new Vector3(worldPos.x, 0f, worldPos.z);
@@ -364,78 +422,42 @@ namespace TheWaningBorder.Input
             
             if (instant)
             {
-                transform.position = _targetPosition;
+                float terrainY = followTerrain ? GetTerrainHeight(worldPos.x, worldPos.z) + heightOffset : heightOffset;
+                transform.position = new Vector3(_targetPosition.x, terrainY, _targetPosition.z);
+                _currentHeight = terrainY;
                 _velocity = Vector3.zero;
+                _heightVelocity = 0f;
             }
         }
 
         /// <summary>
-        /// Get the ground focus point (rig center projected to Y=0).
+        /// Get the ground focus point (rig center projected to terrain).
         /// </summary>
         public Vector3 GetGroundFocusPoint()
         {
-            return new Vector3(transform.position.x, 0f, transform.position.z);
+            float terrainY = GetTerrainHeight(transform.position.x, transform.position.z);
+            return new Vector3(transform.position.x, terrainY, transform.position.z);
         }
-        
-        /// <summary>
-        /// Get the current zoom level.
-        /// </summary>
-        public float CurrentZoom => _currentZoom;
-        
-        /// <summary>
-        /// Get the current rotation angle (Y-axis).
-        /// </summary>
-        public float CurrentRotation => _currentRotation;
-        
-        /// <summary>
-        /// Get the current tilt angle (X-axis).
-        /// </summary>
-        public float CurrentTilt => _currentTilt;
-        
-        // ═══════════════════════════════════════════════════════════════════════
-        // DEBUG
-        // ═══════════════════════════════════════════════════════════════════════
 
-        void OnDrawGizmos()
+        /// <summary>
+        /// Screen-space ray from camera through mouse position.
+        /// </summary>
+        public Ray GetMouseRay()
         {
-            if (!showDebugInfo) return;
-            
-            // Draw rig center
-            Gizmos.color = Color.yellow;
-            Gizmos.DrawWireSphere(transform.position, 1f);
-            
-            // Draw ground focus point
-            Vector3 groundPoint = new Vector3(transform.position.x, 0f, transform.position.z);
-            Gizmos.color = Color.green;
-            Gizmos.DrawWireSphere(groundPoint, 1.5f);
-            Gizmos.DrawLine(transform.position, groundPoint);
-            
-            // Draw world bounds
-            Gizmos.color = Color.cyan;
-            Vector3 c1 = new Vector3(worldMin.x, 0, worldMin.y);
-            Vector3 c2 = new Vector3(worldMax.x, 0, worldMin.y);
-            Vector3 c3 = new Vector3(worldMax.x, 0, worldMax.y);
-            Vector3 c4 = new Vector3(worldMin.x, 0, worldMax.y);
-            Gizmos.DrawLine(c1, c2);
-            Gizmos.DrawLine(c2, c3);
-            Gizmos.DrawLine(c3, c4);
-            Gizmos.DrawLine(c4, c1);
+            return mainCamera.ScreenPointToRay(UnityEngine.Input.mousePosition);
         }
-
+        
         void OnGUI()
         {
             if (!showDebugInfo) return;
             
-            GUILayout.BeginArea(new Rect(Screen.width - 310, 10, 300, 200));
-            GUILayout.Label($"Position: {transform.position:F1}");
-            GUILayout.Label($"Rotation: {_currentRotation:F1}°");
-            GUILayout.Label($"Tilt: {_currentTilt:F1}°");
+            GUILayout.BeginArea(new Rect(10, 10, 300, 150));
+            GUILayout.Label($"Position: {transform.position}");
+            GUILayout.Label($"Target Height: {_targetHeight:F1}");
+            GUILayout.Label($"Current Height: {_currentHeight:F1}");
+            GUILayout.Label($"Terrain: {(_terrain != null ? _terrain.name : "None")}");
             GUILayout.Label($"Zoom: {_currentZoom:F1}");
-            GUILayout.Space(10);
-            GUILayout.Label("Camera Controls:");
-            GUILayout.Label("WASD - Move | Edge - Scroll");
-            GUILayout.Label("Mouse3 - Pan | Wheel - Zoom");
-            GUILayout.Label("Q/E - Rotate | R/F - Tilt");
+            GUILayout.Label($"Tilt: {_currentTilt:F1}°");
             GUILayout.EndArea();
         }
     }

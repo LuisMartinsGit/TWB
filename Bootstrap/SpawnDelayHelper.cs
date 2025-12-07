@@ -4,6 +4,7 @@
 
 using System.Collections;
 using UnityEngine;
+using TheWaningBorder.World.Terrain;
 
 namespace TheWaningBorder.Bootstrap
 {
@@ -17,8 +18,7 @@ namespace TheWaningBorder.Bootstrap
             
             while (elapsed < timeout)
             {
-                var terrain = Terrain.activeTerrain;
-                if (terrain != null && terrain.terrainData != null)
+                if (TerrainUtility.IsReady())
                 {
                     Debug.Log("[SpawnDelayHelper] Terrain ready, spawning players...");
                     PlayerSpawnSystem.SpawnAllFactions();

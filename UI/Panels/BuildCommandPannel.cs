@@ -10,6 +10,7 @@ using TheWaningBorder.Entities;
 using EntityWorld = Unity.Entities.World;
 using TheWaningBorder.Input;
 using TheWaningBorder.Data;
+using TheWaningBorder.World.Terrain;
 
 namespace TheWaningBorder.UI.Panels
 {
@@ -250,25 +251,26 @@ namespace TheWaningBorder.UI.Panels
 
             Ray ray = cam.ScreenPointToRay(UnityEngine.Input.mousePosition);
 
+            // Primary: raycast against placement mask
             if (Physics.Raycast(ray, out var hit, 10000f, placementMask, QueryTriggerInteraction.Ignore))
             {
                 world = hit.point;
                 return true;
             }
 
-            var terrain = Terrain.activeTerrain;
-            if (terrain && terrain.terrainData)
+            // Fallback: use terrain utility with plane intersection for ray
+            if (TerrainUtility.IsReady(out UnityEngine.Terrain terrain))
             {
                 Plane tp = new Plane(Vector3.up, new Vector3(0, terrain.transform.position.y, 0));
                 if (tp.Raycast(ray, out float t))
                 {
                     var p = ray.GetPoint(t);
-                    float ty = terrain.SampleHeight(p) + terrain.transform.position.y;
-                    world = new Vector3(p.x, ty, p.z);
+                    world = new Vector3(p.x, TerrainUtility.GetHeight(p.x, p.z), p.z);
                     return true;
                 }
             }
 
+            // Last resort: ground plane at y=0
             Plane ground = new Plane(Vector3.up, Vector3.zero);
             if (ground.Raycast(ray, out float d2))
             {

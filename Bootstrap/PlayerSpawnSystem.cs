@@ -8,6 +8,7 @@ using Unity.Mathematics;
 using TheWaningBorder.Entities;
 using TheWaningBorder.Economy;
 using TheWaningBorder.Core.Config;
+using TheWaningBorder.World.Terrain;
 
 namespace TheWaningBorder.Bootstrap
 {
@@ -47,50 +48,154 @@ namespace TheWaningBorder.Bootstrap
 
         private static void SpawnFactionBase(EntityManager em, Faction faction, float3 position)
         {
-            // Adjust Y to terrain height
-            float y = GetTerrainHeightStatic(position.x, position.z);
-            float3 spawnPos = new float3(position.x, y, position.z);
+            // Ensure position is on land and at correct height
+            float3 spawnPos = EnsureValidSpawnPosition(position);
             
             // Spawn Hall (main base)
             Hall.Create(em, spawnPos, faction);
 
             // Spawn starting Builders around the Hall
             float offset = 3f;
-            Builder.Create(em, spawnPos + new float3(offset, 0, 0), faction);
-            Builder.Create(em, spawnPos + new float3(-offset, 0, 0), faction);
-            Builder.Create(em, spawnPos + new float3(0, 0, offset), faction);
+            float3 builderPos1 = EnsureValidSpawnPosition(spawnPos + new float3(offset, 0, 0));
+            float3 builderPos2 = EnsureValidSpawnPosition(spawnPos + new float3(-offset, 0, 0));
+            float3 builderPos3 = EnsureValidSpawnPosition(spawnPos + new float3(0, 0, offset));
+            
+            Builder.Create(em, builderPos1, faction);
+            Builder.Create(em, builderPos2, faction);
+            Builder.Create(em, builderPos3, faction);
         }
 
-        private static float GetTerrainHeightStatic(float x, float z)
+        /// <summary>
+        /// Ensure spawn position is on land and at correct terrain height.
+        /// </summary>
+        private static float3 EnsureValidSpawnPosition(float3 position)
         {
-            var terrain = Terrain.activeTerrain;
-            if (terrain != null && terrain.terrainData != null)
-            {
-                return terrain.SampleHeight(new Vector3(x, 0, z)) + terrain.transform.position.y;
-            }
+            // Get terrain height
+            float y = TerrainUtility.GetHeight(position.x, position.z);
             
-            if (Physics.Raycast(new Vector3(x, 1000f, z), Vector3.down, out RaycastHit hit, 2000f))
+            // Check if position is on land (using ProceduralTerrain if available)
+            var terrain = ProceduralTerrain.Instance;
+            if (terrain != null && terrain.IsInWater(new Vector3(position.x, y, position.z)))
             {
-                return hit.point.y;
+                // Try to find nearby land
+                var nearestIsland = terrain.GetNearestIsland(new Vector3(position.x, y, position.z));
+                if (nearestIsland.HasValue)
+                {
+                    var island = nearestIsland.Value;
+                    Vector2 dir = new Vector2(position.x, position.z) - island.Center;
+                    if (dir.magnitude > 0.1f)
+                    {
+                        dir = dir.normalized;
+                        // Move toward island center
+                        float safeDist = island.Radius * 0.5f;
+                        position.x = island.Center.x + dir.x * safeDist;
+                        position.z = island.Center.y + dir.y * safeDist;
+                        y = TerrainUtility.GetHeight(position.x, position.z);
+                    }
+                }
             }
-            
-            return 0f;
+
+            return new float3(position.x, y, position.z);
         }
 
         private static float3[] CalculateSpawnPositions(int playerCount)
         {
+            // Try to use island-aware spawning from ProceduralTerrain
+            var terrain = ProceduralTerrain.Instance;
+            if (terrain != null && terrain.Islands.Count > 0)
+            {
+                var positions3D = terrain.GetMultiplayerSpawnPositions(playerCount);
+                var result = new float3[playerCount];
+                for (int i = 0; i < playerCount; i++)
+                {
+                    result[i] = new float3(positions3D[i].x, positions3D[i].y, positions3D[i].z);
+                }
+                Debug.Log($"[PlayerSpawnSystem] Using island-aware spawn positions across {terrain.Islands.Count} landmasses");
+                return result;
+            }
+
+            // Fallback to layout-based spawning
+            return CalculateLayoutSpawnPositions(playerCount);
+        }
+
+        private static float3[] CalculateLayoutSpawnPositions(int playerCount)
+        {
             var positions = new float3[playerCount];
             int half = GameSettings.MapHalfSize;
-            float spawnRadius = half * 0.7f; // Spawn at 70% from center
+            float spawnRadius = half * 0.7f;
 
-            for (int i = 0; i < playerCount; i++)
+            switch (GameSettings.SpawnLayout)
             {
-                float angle = (i / (float)playerCount) * math.PI * 2f;
-                positions[i] = new float3(
-                    math.cos(angle) * spawnRadius,
-                    0,
-                    math.sin(angle) * spawnRadius
-                );
+                case SpawnLayout.TwoSides:
+                    positions = CalculateTwoSidesPositions(playerCount, half);
+                    break;
+
+                case SpawnLayout.Circle:
+                default:
+                    for (int i = 0; i < playerCount; i++)
+                    {
+                        float angle = (i / (float)playerCount) * math.PI * 2f;
+                        float x = math.cos(angle) * spawnRadius;
+                        float z = math.sin(angle) * spawnRadius;
+                        float y = TerrainUtility.GetHeight(x, z);
+                        positions[i] = new float3(x, y, z);
+                    }
+                    break;
+            }
+
+            return positions;
+        }
+
+        private static float3[] CalculateTwoSidesPositions(int playerCount, int mapHalf)
+        {
+            var positions = new float3[playerCount];
+            float spawnDist = mapHalf * 0.7f;
+            
+            int side1Count = (playerCount + 1) / 2;
+            int side2Count = playerCount - side1Count;
+
+            bool leftRight = GameSettings.TwoSides == TwoSidesPreset.LeftRight;
+
+            // Side 1
+            for (int i = 0; i < side1Count; i++)
+            {
+                float offset = (i - (side1Count - 1) * 0.5f) * 20f;
+                float x, z;
+                
+                if (leftRight)
+                {
+                    x = -spawnDist;
+                    z = offset;
+                }
+                else
+                {
+                    x = offset;
+                    z = -spawnDist;
+                }
+                
+                float y = TerrainUtility.GetHeight(x, z);
+                positions[i] = new float3(x, y, z);
+            }
+
+            // Side 2
+            for (int i = 0; i < side2Count; i++)
+            {
+                float offset = (i - (side2Count - 1) * 0.5f) * 20f;
+                float x, z;
+                
+                if (leftRight)
+                {
+                    x = spawnDist;
+                    z = offset;
+                }
+                else
+                {
+                    x = offset;
+                    z = spawnDist;
+                }
+                
+                float y = TerrainUtility.GetHeight(x, z);
+                positions[side1Count + i] = new float3(x, y, z);
             }
 
             return positions;

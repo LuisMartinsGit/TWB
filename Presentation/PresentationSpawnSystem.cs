@@ -8,6 +8,7 @@ using Unity.Entities;
 using Unity.Transforms;
 using TheWaningBorder.Presentation;
 using TheWaningBorder.Input;
+using TheWaningBorder.World.Terrain;
 
 public class PresentationSpawnSystem : MonoBehaviour
 {
@@ -145,9 +146,9 @@ public class PresentationSpawnSystem : MonoBehaviour
 
         if (prefab == null) return null;
 
-        // Get position and adjust Y to terrain height
+        // Get position and adjust Y to terrain height using shared utility
         Vector3 pos = transform.Position;
-        pos.y = GetTerrainHeight(pos.x, pos.z);
+        pos.y = TerrainUtility.GetHeight(pos.x, pos.z);
 
         var go = Instantiate(prefab);
         go.name = $"Entity_{entity.Index}_{presentationId}";
@@ -163,42 +164,6 @@ public class PresentationSpawnSystem : MonoBehaviour
 
         return go;
     }
-private float GetTerrainHeight(float x, float z)
-{
-    // Find the terrain with actual data (ProcTerrain)
-    Terrain terrain = null;
-    
-    foreach (var t in Terrain.activeTerrains)
-    {
-        if (t.terrainData != null)
-        {
-            terrain = t;
-            break;
-        }
-    }
-    
-    // Also try finding by name as backup
-    if (terrain == null)
-    {
-        var go = GameObject.Find("ProcTerrain");
-        if (go != null)
-            terrain = go.GetComponent<Terrain>();
-    }
-    
-    if (terrain != null && terrain.terrainData != null)
-    {
-        float height = terrain.SampleHeight(new Vector3(x, 0, z)) + terrain.transform.position.y;
-        return height;
-    }
-    
-    // Fallback: raycast
-    if (Physics.Raycast(new Vector3(x, 1000f, z), Vector3.down, out RaycastHit hit, 2000f))
-    {
-        return hit.point.y;
-    }
-    
-    return 0f;
-}
 
     private void ApplyFactionColor(GameObject go, Entity entity)
     {
@@ -229,7 +194,7 @@ private float GetTerrainHeight(float x, float z)
             if (EntityViewManager.Instance.TryGetView(entities[i], out var go) && go != null)
             {
                 var pos = (Vector3)transforms[i].Position;
-                pos.y = GetTerrainHeight(pos.x, pos.z);
+                pos.y = TerrainUtility.GetHeight(pos.x, pos.z);
                 go.transform.position = pos;
                 go.transform.rotation = transforms[i].Rotation;
             }
@@ -238,6 +203,7 @@ private float GetTerrainHeight(float x, float z)
         entities.Dispose();
         transforms.Dispose();
     }
+
     private GameObject CreateFallbackPrefab(string name, PrimitiveType type, float scale)
     {
         var go = GameObject.CreatePrimitive(type);
